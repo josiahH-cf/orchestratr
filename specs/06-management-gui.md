@@ -1,6 +1,6 @@
 # Feature: Management GUI
 
-**Status:** Not started  
+**Status:** Complete  
 **Project:** orchestratr
 
 ## Description
@@ -22,9 +22,18 @@ A minimal GUI for managing the app registry and orchestratr settings. Used rarel
 
 | Area | Files |
 |------|-------|
-| **Create** | `orchestratr/gui/main_window.py` — app table, settings panel |
-| **Create** | `orchestratr/gui/app_form.py` — add/edit app dialog |
-| **Create** | `orchestratr/gui/key_capture.py` — custom key-capture widget for leader key setting |
+| **Create** | `internal/gui/gui.go` — web server, browser open, API handlers for config CRUD |
+| **Create** | `internal/gui/gui_test.go` — tests for API handlers and config save logic |
+| **Create** | `internal/gui/static/` — embedded HTML/CSS/JS for the config editor SPA |
+| **Modify** | `cmd/orchestratr/main.go` — wire `tray.OnConfigure` to open the GUI in the browser |
+
+## Implementation Notes
+
+The GUI is implemented as a localhost web server (see `/decisions/0003-web-based-gui.md`):
+- Go serves embedded HTML/JS via `net/http` + `embed` package
+- Opens the default browser via `xdg-open` / `open` / `start`
+- JSON API endpoints for reading/writing the config
+- The GUI server runs on an ephemeral port, separate from the daemon API
 
 ## Constraints
 
