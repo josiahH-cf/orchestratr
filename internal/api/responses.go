@@ -5,6 +5,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 )
 
@@ -22,10 +23,15 @@ type HealthResponse struct {
 }
 
 // writeJSON encodes v as JSON and writes it with the given HTTP status code.
+// If encoding fails, the error is logged and a 500 status is sent if headers
+// have not yet been written.
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		// Headers already sent — log the error; we can't change the status.
+		log.Printf("api: json encode error: %v", err)
+	}
 }
 
 // writeError writes a standard error response.

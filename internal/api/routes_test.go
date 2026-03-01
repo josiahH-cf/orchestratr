@@ -38,7 +38,7 @@ func TestGetApps_EmptyRegistry(t *testing.T) {
 func TestGetApps_WithApps(t *testing.T) {
 	cfg := registry.Config{
 		Apps: []registry.AppEntry{
-			{Name: "espansr", Chord: "e", Command: "espansr", Environment: "native"},
+			{Name: "espansr", Chord: "e", Command: "espansr", Environment: "native", Description: "Espanso manager"},
 			{Name: "firefox", Chord: "f", Command: "firefox", Environment: "native"},
 		},
 	}
@@ -56,18 +56,34 @@ func TestGetApps_WithApps(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	var apps []registry.AppEntry
-	if err := json.NewDecoder(rec.Body).Decode(&apps); err != nil {
+	// Parse as raw JSON to verify field names are snake_case.
+	var raw []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&raw); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if len(apps) != 2 {
-		t.Fatalf("got %d apps, want 2", len(apps))
+	if len(raw) != 2 {
+		t.Fatalf("got %d apps, want 2", len(raw))
 	}
-	if apps[0].Name != "espansr" {
-		t.Errorf("apps[0].Name = %q, want %q", apps[0].Name, "espansr")
+
+	// Verify snake_case field names (not PascalCase).
+	first := raw[0]
+	for _, key := range []string{"name", "chord", "command", "environment"} {
+		if _, ok := first[key]; !ok {
+			t.Errorf("missing expected snake_case field %q in JSON response", key)
+		}
 	}
-	if apps[1].Name != "firefox" {
-		t.Errorf("apps[1].Name = %q, want %q", apps[1].Name, "firefox")
+	// Verify PascalCase is NOT present.
+	for _, key := range []string{"Name", "Chord", "Command", "Environment"} {
+		if _, ok := first[key]; ok {
+			t.Errorf("unexpected PascalCase field %q in JSON response — missing json struct tag?", key)
+		}
+	}
+
+	if first["name"] != "espansr" {
+		t.Errorf("apps[0].name = %v, want %q", first["name"], "espansr")
+	}
+	if raw[1]["name"] != "firefox" {
+		t.Errorf("apps[1].name = %v, want %q", raw[1]["name"], "firefox")
 	}
 }
 

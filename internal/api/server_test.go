@@ -128,6 +128,15 @@ func TestHealthEndpoint_WrongMethod(t *testing.T) {
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
 	}
+
+	// RFC 7231 §6.5.5: 405 MUST include Allow header.
+	allow := rec.Header().Get("Allow")
+	if allow == "" {
+		t.Error("405 response missing Allow header")
+	}
+	if allow != "GET" {
+		t.Errorf("Allow = %q, want %q", allow, "GET")
+	}
 }
 
 func TestUnknownRoute_Returns404(t *testing.T) {
@@ -217,5 +226,98 @@ func TestServerStartStop(t *testing.T) {
 	err := <-errCh
 	if err != nil && err != http.ErrServerClosed {
 		t.Fatalf("unexpected server error: %v", err)
+	}
+}
+
+func TestServerDoubleStart(t *testing.T) {
+	s := NewServer(0, "v0.0.1", nil, nil)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.Start()
+	}()
+
+	if !s.WaitReady(2) {
+		t.Fatal("server did not become ready")
+	}
+	defer s.Stop()
+
+	// Second Start should return an error, not panic.
+	err := s.Start()
+	if err == nil {
+		t.Fatal("expected error on double start")
+	}
+}
+
+func TestAppAction_NilRegistry(t *testing.T) {
+	s := NewServer(0, "v0.0.1", nil, nil)
+	handler := s.Handler()
+
+	req := httptest.NewRequest("POST", "/apps/anything/launched", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+
+	var errResp ErrorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decoding error response: %v", err)
+	}
+	if errResp.Code != "unavailable" {
+		t.Errorf("code = %q, want %q", errResp.Code, "unavailable")
+	}
+}
+
+func TestAppAction_InvalidName(t *testing.T) {
+	s := NewServer(0, "v0.0.1", nil, nil)
+	handler := s.Handler()
+
+	tests := []struct {
+		name     string
+		path     string
+		wantCode int
+	}{
+		// Go's http.ServeMux auto-redirects /.. and /. with 301 —
+		// path traversal is safe via stdlib before we even see it.
+		{"dot dot redirect", "/apps/../launched", http.StatusMovedPermanently},
+		{"single dot redirect", "/apps/./launched", http.StatusMovedPermanently},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", tt.path, nil)
+			req.RemoteAddr = "127.0.0.1:54321"
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantCode {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestStateTracker_AllDeterministic(t *testing.T) {
+	st := NewStateTracker()
+	st.SetLaunched("zebra")
+	st.SetLaunched("alpha")
+	st.SetLaunched("middle")
+
+	all := st.All()
+	if len(all) != 3 {
+		t.Fatalf("got %d states, want 3", len(all))
+	}
+	if all[0].Name != "alpha" {
+		t.Errorf("all[0].Name = %q, want %q", all[0].Name, "alpha")
+	}
+	if all[1].Name != "middle" {
+		t.Errorf("all[1].Name = %q, want %q", all[1].Name, "middle")
+	}
+	if all[2].Name != "zebra" {
+		t.Errorf("all[2].Name = %q, want %q", all[2].Name, "zebra")
 	}
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -16,6 +17,9 @@ import (
 // reload the config and return an error if the reload failed.
 type ReloadFunc func() (*registry.Config, error)
 
+// maxRequestBody is the maximum allowed request body size (1 MB).
+const maxRequestBody = 1 << 20
+
 // Server is the localhost HTTP API server for orchestratr.
 type Server struct {
 	port     int
@@ -23,6 +27,7 @@ type Server struct {
 	reg      *registry.Registry
 	reloadFn ReloadFunc
 	state    *StateTracker
+	logger   *log.Logger
 
 	mu     sync.Mutex
 	server *http.Server
@@ -40,8 +45,16 @@ func NewServer(port int, version string, reg *registry.Registry, reloadFn Reload
 		reg:      reg,
 		reloadFn: reloadFn,
 		state:    NewStateTracker(),
+		logger:   log.New(log.Default().Writer(), "api: ", log.LstdFlags),
 		ready:    make(chan struct{}),
 	}
+}
+
+// SetLogger replaces the server's logger.
+func (s *Server) SetLogger(l *log.Logger) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.logger = l
 }
 
 // Handler returns the HTTP handler with all routes and middleware.
@@ -56,7 +69,7 @@ func (s *Server) Handler() http.Handler {
 	// Catch-all for unknown routes.
 	mux.HandleFunc("/", s.handleNotFound)
 
-	return localhostOnly(mux)
+	return s.requestLogger(localhostOnly(mux))
 }
 
 // Start begins listening on 127.0.0.1 and serving requests. It
@@ -67,6 +80,15 @@ func (s *Server) Start() error {
 
 	handler := s.Handler()
 	s.mu.Lock()
+
+	// Guard against double-start: if ready is already closed, reject.
+	select {
+	case <-s.ready:
+		s.mu.Unlock()
+		return fmt.Errorf("api server already started")
+	default:
+	}
+
 	s.server = &http.Server{
 		Addr:              addr,
 		Handler:           handler,
@@ -138,10 +160,42 @@ func localhostOnly(next http.Handler) http.Handler {
 	})
 }
 
+// requestLogger is middleware that logs each request's method, path,
+// and response status.
+func (s *Server) requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(sw, r)
+		s.logger.Printf("%s %s %d %s", r.Method, r.URL.Path, sw.status, time.Since(start).Round(time.Microsecond))
+	})
+}
+
+// statusWriter wraps http.ResponseWriter to capture the status code.
+type statusWriter struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+}
+
+func (sw *statusWriter) WriteHeader(code int) {
+	if !sw.wroteHeader {
+		sw.status = code
+		sw.wroteHeader = true
+	}
+	sw.ResponseWriter.WriteHeader(code)
+}
+
+// methodNotAllowed writes a 405 response with the required Allow header.
+func methodNotAllowed(w http.ResponseWriter, allowed string) {
+	w.Header().Set("Allow", allowed)
+	writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use "+allowed)
+}
+
 // handleHealth responds with the server's health status and version.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET")
+		methodNotAllowed(w, http.MethodGet)
 		return
 	}
 	writeJSON(w, http.StatusOK, HealthResponse{
@@ -153,7 +207,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // handleApps returns the app registry as a JSON array.
 func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use GET")
+		methodNotAllowed(w, http.MethodGet)
 		return
 	}
 	if s.reg == nil {
@@ -166,9 +220,12 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 // handleAppAction routes /apps/{name}/{action} requests.
 func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use POST")
+		methodNotAllowed(w, http.MethodPost)
 		return
 	}
+
+	// Limit request body size.
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 
 	// Parse /apps/{name}/{action}
 	path := strings.TrimPrefix(r.URL.Path, "/apps/")
@@ -181,12 +238,21 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 	name := parts[0]
 	action := parts[1]
 
-	// Verify app exists in registry.
-	if s.reg != nil {
-		if _, found := s.reg.FindByName(name); !found {
-			writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("app %q not found", name))
-			return
-		}
+	// Validate app name: must be non-empty, no slashes, no path traversal.
+	if strings.ContainsAny(name, "/\\") || name == "." || name == ".." {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid app name")
+		return
+	}
+
+	// Verify app exists in registry. If registry is nil, we cannot
+	// validate app names so reject all lifecycle requests.
+	if s.reg == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "registry not loaded")
+		return
+	}
+	if _, found := s.reg.FindByName(name); !found {
+		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("app %q not found", name))
+		return
 	}
 
 	switch action {
@@ -201,24 +267,20 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 
 // handleLaunched records that an app has been launched.
 func (s *Server) handleLaunched(w http.ResponseWriter, _ *http.Request, name string) {
-	if s.state != nil {
-		s.state.SetLaunched(name)
-	}
+	s.state.SetLaunched(name)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "app": name, "state": "launched"})
 }
 
 // handleReady records that an app is fully initialized.
 func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request, name string) {
-	if s.state != nil {
-		s.state.SetReady(name)
-	}
+	s.state.SetReady(name)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "app": name, "state": "ready"})
 }
 
 // handleReload triggers a config hot-reload.
 func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "use POST")
+		methodNotAllowed(w, http.MethodPost)
 		return
 	}
 	if s.reloadFn == nil {

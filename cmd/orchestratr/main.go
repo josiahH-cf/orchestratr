@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -109,15 +110,22 @@ func runStart(stdout, stderr io.Writer) error {
 	// Start API server.
 	apiSrv := api.NewServer(apiPort, "v0.0.0-dev", reg, reloadFn)
 	go func() {
-		if srvErr := apiSrv.Start(); srvErr != nil {
+		if srvErr := apiSrv.Start(); srvErr != nil && srvErr != http.ErrServerClosed {
 			logger.Printf("API server error: %v", srvErr)
 		}
 	}()
 	defer apiSrv.Stop()
 
+	// Wait for the API server to be listening before writing the
+	// port file; otherwise clients may read a port that isn't ready.
+	if !apiSrv.WaitReady(5) {
+		logger.Println("warning: API server did not become ready within 5s")
+	}
+
 	// Write port discovery file.
 	portFilePath := daemon.DefaultPortFilePath()
-	if writeErr := daemon.WritePortFile(portFilePath, apiPort); writeErr != nil {
+	actualPort := apiSrv.Port()
+	if writeErr := daemon.WritePortFile(portFilePath, actualPort); writeErr != nil {
 		logger.Printf("warning: could not write port file: %v", writeErr)
 	} else {
 		defer daemon.RemovePortFile(portFilePath)
@@ -125,12 +133,12 @@ func runStart(stdout, stderr io.Writer) error {
 
 	d := daemon.New(daemon.Config{
 		LogLevel: "info",
-		APIPort:  apiPort,
+		APIPort:  actualPort,
 	})
 	d.SetLogger(logger)
 
-	fmt.Fprintf(stdout, "orchestratr daemon starting on port %d\n", apiPort)
-	logger.Printf("PID %d, API port %d", os.Getpid(), apiPort)
+	fmt.Fprintf(stdout, "orchestratr daemon starting on port %d\n", actualPort)
+	logger.Printf("PID %d, API port %d", os.Getpid(), actualPort)
 
 	return d.Run(context.Background())
 }

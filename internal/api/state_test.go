@@ -205,7 +205,13 @@ func TestPostLaunched_UnknownApp(t *testing.T) {
 }
 
 func TestAppAction_BadPath(t *testing.T) {
-	s := NewServer(0, "v0.0.1", nil, nil)
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{
+			{Name: "espansr", Chord: "e", Command: "espansr", Environment: "native"},
+		},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "v0.0.1", reg, nil)
 	handler := s.Handler()
 
 	tests := []struct {
@@ -254,7 +260,13 @@ func TestAppAction_UnknownAction(t *testing.T) {
 }
 
 func TestAppAction_WrongMethod(t *testing.T) {
-	s := NewServer(0, "v0.0.1", nil, nil)
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{
+			{Name: "espansr", Chord: "e", Command: "espansr", Environment: "native"},
+		},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "v0.0.1", reg, nil)
 	handler := s.Handler()
 
 	req := httptest.NewRequest("GET", "/apps/espansr/launched", nil)
@@ -265,5 +277,11 @@ func TestAppAction_WrongMethod(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+
+	// RFC 7231: 405 responses MUST include an Allow header.
+	allow := rec.Header().Get("Allow")
+	if allow == "" {
+		t.Error("405 response missing Allow header")
 	}
 }

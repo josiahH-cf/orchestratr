@@ -1,6 +1,7 @@
 package api
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
@@ -76,7 +77,8 @@ func (st *StateTracker) Get(name string) *AppState {
 	return &cp
 }
 
-// All returns a copy of all tracked app states.
+// All returns a copy of all tracked app states, sorted by name for
+// deterministic output.
 func (st *StateTracker) All() []AppState {
 	st.mu.RLock()
 	defer st.mu.RUnlock()
@@ -85,5 +87,8 @@ func (st *StateTracker) All() []AppState {
 	for _, s := range st.apps {
 		result = append(result, *s)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
 	return result
 }
