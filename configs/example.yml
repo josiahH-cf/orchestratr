@@ -1,0 +1,11 @@
+# orchestratr configuration
+leader_key: "ctrl+space"
+api_port: 9876
+
+apps:
+  - name: espansr
+    description: "Espanso template manager"
+    chord: "e"
+    command: "espansr gui"
+    ready_cmd: "espansr status --json"
+    ready_timeout_ms: 3000

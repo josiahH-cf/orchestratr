@@ -1,0 +1,20 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# Codex reads AGENTS.md natively. Fallback to CLAUDE.md if absent.
+project_doc_fallback_filenames = ["CLAUDE.md"]
+
+# Max bytes from instruction files. Default 32768; raised for larger projects.
+project_doc_max_bytes = 65536
+
+# Sandbox: workspace-write allows edits within the project directory.
+sandbox_mode = "workspace-write"
+
+# Approval: on-request pauses before commands for interactive use.
+approval_policy = "on-request"
+
+# Model: uncomment to override default.
+# model = "gpt-5.3-codex"
+
+[sandbox_workspace_write]
+# Enable network for package installs. Set false if dependencies are vendored.
+network_access = true

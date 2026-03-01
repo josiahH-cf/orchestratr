@@ -1,0 +1,23 @@
+# Build
+/orchestratr
+*.exe
+/dist/
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Agent personal config
+CLAUDE.local.md
+
+# Worktrees
+.trees/
