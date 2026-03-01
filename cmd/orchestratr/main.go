@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/josiahH-cf/orchestratr/internal/api"
 	"github.com/josiahH-cf/orchestratr/internal/daemon"
+	"github.com/josiahH-cf/orchestratr/internal/gui"
 	"github.com/josiahH-cf/orchestratr/internal/hotkey"
 	"github.com/josiahH-cf/orchestratr/internal/launcher"
 	"github.com/josiahH-cf/orchestratr/internal/registry"
@@ -36,7 +38,7 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		fmt.Fprintln(stdout, "orchestratr — system-wide app launcher")
-		fmt.Fprintln(stdout, "Usage: orchestratr [start|stop|status|reload|list|trigger|version]")
+		fmt.Fprintln(stdout, "Usage: orchestratr [start|stop|status|reload|list|trigger|configure|version]")
 		return nil
 	}
 
@@ -62,6 +64,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	case "reload":
 		return runReload(stdout, stderr)
+
+	case "configure":
+		return runConfigure(stdout, stderr)
 
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
@@ -265,7 +270,15 @@ func runStart(stdout, stderr io.Writer) error {
 	})
 	trayProvider.OnConfigure(func() {
 		logger.Println("configure requested via tray")
-		// TODO: open management GUI (spec 06)
+		guiSrv := gui.NewServer(cfgPath, actualPort, logger)
+		if guiErr := guiSrv.Start(); guiErr != nil {
+			logger.Printf("gui server start failed: %v", guiErr)
+			return
+		}
+		logger.Printf("management GUI listening on %s", guiSrv.URL())
+		if openErr := guiSrv.OpenBrowser(); openErr != nil {
+			logger.Printf("could not open browser: %v — visit %s", openErr, guiSrv.URL())
+		}
 	})
 	_ = trayProvider.SetState("running")
 
@@ -577,6 +590,44 @@ func runReload(stdout, stderr io.Writer) error {
 		return fmt.Errorf("reload failed: %s", errResp.Error)
 	}
 	return fmt.Errorf("reload failed: HTTP %d", resp.StatusCode)
+}
+
+// runConfigure opens the web-based management GUI. It reads the
+// config path and daemon port, starts a temporary HTTP server, and
+// opens the user's browser.
+func runConfigure(stdout, stderr io.Writer) error {
+	cfgPath := registry.DefaultConfigPath()
+	if envPath := os.Getenv("ORCHESTRATR_CONFIG"); envPath != "" {
+		cfgPath = envPath
+	}
+
+	// Try to detect the daemon port for live reload.
+	daemonPort := 0
+	if port, err := readPort(); err == nil {
+		daemonPort = port
+	}
+
+	logger := log.New(stderr, "gui: ", log.LstdFlags)
+	srv := gui.NewServer(cfgPath, daemonPort, logger)
+	if err := srv.Start(); err != nil {
+		return fmt.Errorf("starting gui: %w", err)
+	}
+	defer srv.Stop()
+
+	fmt.Fprintf(stdout, "management GUI: %s\n", srv.URL())
+
+	if err := srv.OpenBrowser(); err != nil {
+		fmt.Fprintf(stderr, "could not open browser: %v\n", err)
+		fmt.Fprintf(stdout, "open %s in your browser\n", srv.URL())
+	}
+
+	// Block until interrupted.
+	fmt.Fprintln(stdout, "press Ctrl+C to close the GUI server")
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	<-sig
+	fmt.Fprintln(stdout, "\nshutting down GUI server")
+	return nil
 }
 
 // readPort reads the daemon port from the port discovery file.

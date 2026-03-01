@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>orchestratr — Configuration</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --surface: #282839;
+    --border: #3e3e55;
+    --text: #cdd6f4;
+    --text-dim: #7f849c;
+    --accent: #89b4fa;
+    --accent-hover: #74c7ec;
+    --danger: #f38ba8;
+    --success: #a6e3a1;
+    --warn: #fab387;
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+    max-width: 960px;
+    margin: 0 auto;
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .subtitle { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 20px; }
+  .status-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-radius: var(--radius);
+    background: var(--surface); margin-bottom: 20px; font-size: 0.85rem;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--danger);
+  }
+  .status-dot.connected { background: var(--success); }
+
+  /* Settings */
+  .settings {
+    display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr;
+    gap: 8px 12px; align-items: center;
+    background: var(--surface); padding: 16px; border-radius: var(--radius);
+    margin-bottom: 20px;
+  }
+  .settings label { font-size: 0.85rem; color: var(--text-dim); white-space: nowrap; }
+  .settings input {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 10px; border-radius: var(--radius); font-size: 0.9rem;
+  }
+
+  /* App table */
+  table {
+    width: 100%; border-collapse: collapse;
+    background: var(--surface); border-radius: var(--radius);
+    overflow: hidden;
+  }
+  th {
+    text-align: left; padding: 10px 12px; font-size: 0.8rem;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-dim); border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 10px 12px; border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(137, 180, 250, 0.05); }
+  .status-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 12px;
+    font-size: 0.75rem; font-weight: 500;
+  }
+  .status-badge.stopped { background: rgba(243,139,168,0.15); color: var(--danger); }
+  .status-badge.launched { background: rgba(250,179,135,0.15); color: var(--warn); }
+  .status-badge.ready { background: rgba(166,227,161,0.15); color: var(--success); }
+
+  /* Buttons */
+  button {
+    cursor: pointer; border: none; border-radius: var(--radius);
+    padding: 6px 14px; font-size: 0.85rem; font-weight: 500;
+    transition: background 0.15s;
+  }
+  .btn-primary { background: var(--accent); color: var(--bg); }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary {
+    background: transparent; color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { border-color: var(--text); color: var(--text); }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn-danger:hover { background: rgba(243,139,168,0.1); }
+  .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+  .actions { display: flex; gap: 6px; }
+  .toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin: 16px 0 12px;
+  }
+  .bottom-bar {
+    display: flex; justify-content: flex-end; gap: 8px;
+    margin-top: 20px; padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: var(--surface); border-radius: 8px; padding: 24px;
+    width: 450px; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .modal h2 { font-size: 1.1rem; margin-bottom: 16px; }
+  .form-group { margin-bottom: 12px; }
+  .form-group label { display: block; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 4px; }
+  .form-group input, .form-group select {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 10px; border-radius: var(--radius);
+    font-size: 0.9rem;
+  }
+  .form-group select { appearance: auto; }
+  .chord-hint {
+    font-size: 0.75rem; margin-top: 2px; min-height: 1em;
+  }
+  .chord-hint.ok { color: var(--success); }
+  .chord-hint.err { color: var(--danger); }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--success); color: var(--bg);
+    padding: 10px 20px; border-radius: var(--radius);
+    font-weight: 500; font-size: 0.9rem;
+    opacity: 0; transition: opacity 0.3s;
+    z-index: 200;
+  }
+  .toast.error { background: var(--danger); }
+  .toast.visible { opacity: 1; }
+
+  .empty-state {
+    text-align: center; padding: 32px; color: var(--text-dim);
+  }
+</style>
+</head>
+<body>
+
+<h1>orchestratr</h1>
+<p class="subtitle">Configuration Editor</p>
+
+<div class="status-bar">
+  <div class="status-dot" id="statusDot"></div>
+  <span id="statusText">Checking daemon...</span>
+</div>
+
+<div class="settings">
+  <label for="leaderKey">Leader Key</label>
+  <input id="leaderKey" type="text" value="ctrl+space">
+  <label for="chordTimeout">Timeout (ms)</label>
+  <input id="chordTimeout" type="number" value="2000" style="width:80px">
+  <label for="apiPort">API Port</label>
+  <input id="apiPort" type="number" value="9876" style="width:80px">
+</div>
+
+<div class="toolbar">
+  <strong style="font-size:0.95rem">Registered Apps</strong>
+  <button class="btn-primary" onclick="showAddForm()">+ Add App</button>
+</div>
+
+<table id="appTable">
+  <thead>
+    <tr>
+      <th>Name</th><th>Chord</th><th>Command</th><th>Env</th><th>Status</th><th></th>
+    </tr>
+  </thead>
+  <tbody id="appTableBody">
+  </tbody>
+</table>
+
+<div class="bottom-bar">
+  <button class="btn-secondary" onclick="loadConfig()">Revert</button>
+  <button class="btn-primary" onclick="saveConfig()">Save</button>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay hidden" id="modal">
+  <div class="modal">
+    <h2 id="modalTitle">Add App</h2>
+    <div class="form-group">
+      <label for="formName">Name</label>
+      <input id="formName" type="text" placeholder="my-app">
+    </div>
+    <div class="form-group">
+      <label for="formChord">Chord</label>
+      <input id="formChord" type="text" placeholder="e" maxlength="12">
+      <div class="chord-hint" id="chordHint"></div>
+    </div>
+    <div class="form-group">
+      <label for="formCommand">Command</label>
+      <input id="formCommand" type="text" placeholder="my-app --start">
+    </div>
+    <div class="form-group">
+      <label for="formEnv">Environment</label>
+      <select id="formEnv">
+        <option value="native">native</option>
+        <option value="wsl">wsl</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="formDesc">Description</label>
+      <input id="formDesc" type="text" placeholder="Launch my app">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" id="modalSave" onclick="saveForm()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+let config = { leader_key: '', chord_timeout_ms: 2000, api_port: 9876, apps: [] };
+let editIndex = -1; // -1 = add mode, >= 0 = edit mode
+let daemonStates = {}; // app name → state from daemon
+
+async function loadConfig() {
+  try {
+    const resp = await fetch('/api/config');
+    config = await resp.json();
+    document.getElementById('leaderKey').value = config.leader_key || '';
+    document.getElementById('chordTimeout').value = config.chord_timeout_ms || 2000;
+    document.getElementById('apiPort').value = config.api_port || 9876;
+    renderTable();
+  } catch (e) {
+    showToast('Failed to load config: ' + e.message, true);
+  }
+}
+
+async function checkDaemon() {
+  try {
+    const resp = await fetch('/api/daemon-info');
+    const info = await resp.json();
+    const dot = document.getElementById('statusDot');
+    const text = document.getElementById('statusText');
+    if (info.connected) {
+      dot.classList.add('connected');
+      text.textContent = 'Daemon running on port ' + info.api_port;
+      await fetchDaemonStates(info.api_port);
+    } else if (info.api_port > 0) {
+      text.textContent = 'Daemon not reachable (port ' + info.api_port + ')';
+    } else {
+      text.textContent = 'Daemon not configured';
+    }
+  } catch (e) {
+    document.getElementById('statusText').textContent = 'GUI server error';
+  }
+}
+
+async function fetchDaemonStates(port) {
+  // Fetch states via our GUI server proxy — the daemon is on a different port.
+  // For simplicity, the GUI server doesn't proxy state. We display "unknown" if
+  // we can't reach the daemon directly (same-origin limitation doesn't apply
+  // since both are localhost).
+  for (const app of config.apps || []) {
+    try {
+      const resp = await fetch(`http://127.0.0.1:${port}/apps/${encodeURIComponent(app.name)}/state`);
+      if (resp.ok) {
+        daemonStates[app.name] = await resp.json();
+      }
+    } catch (e) {
+      // Can't reach daemon — that's fine.
+    }
+  }
+  renderTable();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('appTableBody');
+  const apps = config.apps || [];
+
+  if (apps.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No apps registered. Click "+ Add App" to get started.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = apps.map((app, i) => {
+    const state = daemonStates[app.name];
+    let status = 'stopped';
+    if (state && state.launched) {
+      status = state.ready ? 'ready' : 'launched';
+    }
+    return `<tr>
+      <td>${esc(app.name)}</td>
+      <td><code>${esc(app.chord)}</code></td>
+      <td><code>${esc(app.command)}</code></td>
+      <td>${esc(app.environment || 'native')}</td>
+      <td><span class="status-badge ${status}">${status}</span></td>
+      <td class="actions">
+        <button class="btn-secondary btn-sm" onclick="showEditForm(${i})">Edit</button>
+        <button class="btn-danger btn-sm" onclick="removeApp(${i})">Remove</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function showAddForm() {
+  editIndex = -1;
+  document.getElementById('modalTitle').textContent = 'Add App';
+  document.getElementById('modalSave').textContent = 'Add';
+  document.getElementById('formName').value = '';
+  document.getElementById('formChord').value = '';
+  document.getElementById('formCommand').value = '';
+  document.getElementById('formEnv').value = 'native';
+  document.getElementById('formDesc').value = '';
+  document.getElementById('chordHint').textContent = '';
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('formName').focus();
+}
+
+function showEditForm(i) {
+  const app = config.apps[i];
+  editIndex = i;
+  document.getElementById('modalTitle').textContent = 'Edit App';
+  document.getElementById('modalSave').textContent = 'Save';
+  document.getElementById('formName').value = app.name;
+  document.getElementById('formChord').value = app.chord;
+  document.getElementById('formCommand').value = app.command;
+  document.getElementById('formEnv').value = app.environment || 'native';
+  document.getElementById('formDesc').value = app.description || '';
+  document.getElementById('chordHint').textContent = '';
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('formName').focus();
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+  editIndex = -1;
+}
+
+function saveForm() {
+  const name = document.getElementById('formName').value.trim();
+  const chord = document.getElementById('formChord').value.trim().toLowerCase();
+  const command = document.getElementById('formCommand').value.trim();
+  const env = document.getElementById('formEnv').value;
+  const desc = document.getElementById('formDesc').value.trim();
+
+  // Validate.
+  const errs = [];
+  if (!name) errs.push('Name is required');
+  if (!chord) errs.push('Chord is required');
+  if (!command) errs.push('Command is required');
+
+  // Check chord uniqueness.
+  const apps = config.apps || [];
+  for (let i = 0; i < apps.length; i++) {
+    if (i === editIndex) continue;
+    if (apps[i].chord.toLowerCase() === chord) {
+      errs.push(`Chord "${chord}" is already used by "${apps[i].name}"`);
+      break;
+    }
+  }
+
+  if (errs.length > 0) {
+    showToast(errs.join('. '), true);
+    return;
+  }
+
+  const entry = { name, chord, command, environment: env, description: desc };
+
+  if (editIndex >= 0) {
+    config.apps[editIndex] = entry;
+  } else {
+    config.apps = config.apps || [];
+    config.apps.push(entry);
+  }
+
+  closeModal();
+  renderTable();
+}
+
+function removeApp(i) {
+  const app = config.apps[i];
+  if (!confirm(`Remove "${app.name}" from the registry?`)) return;
+  config.apps.splice(i, 1);
+  renderTable();
+}
+
+async function saveConfig() {
+  // Update config from settings inputs.
+  config.leader_key = document.getElementById('leaderKey').value.trim();
+  config.chord_timeout_ms = parseInt(document.getElementById('chordTimeout').value) || 2000;
+  config.api_port = parseInt(document.getElementById('apiPort').value) || 9876;
+
+  try {
+    const resp = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    const result = await resp.json();
+    if (!resp.ok) {
+      showToast('Save failed: ' + (result.error || 'unknown error'), true);
+      return;
+    }
+    let msg = `Saved (${result.apps} apps)`;
+    if (result.reloaded) msg += ' — daemon reloaded';
+    showToast(msg, false);
+  } catch (e) {
+    showToast('Save failed: ' + e.message, true);
+  }
+}
+
+// Real-time chord validation.
+document.getElementById('formChord').addEventListener('input', function() {
+  const chord = this.value.trim().toLowerCase();
+  const hint = document.getElementById('chordHint');
+  if (!chord) { hint.textContent = ''; hint.className = 'chord-hint'; return; }
+
+  const apps = config.apps || [];
+  for (let i = 0; i < apps.length; i++) {
+    if (i === editIndex) continue;
+    if (apps[i].chord.toLowerCase() === chord) {
+      hint.textContent = `⚠ Already used by "${apps[i].name}"`;
+      hint.className = 'chord-hint err';
+      return;
+    }
+  }
+  hint.textContent = '✓ Available';
+  hint.className = 'chord-hint ok';
+});
+
+// Close modal on Escape.
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && !document.getElementById('modal').classList.contains('hidden')) {
+    closeModal();
+  }
+});
+
+// Close modal on overlay click.
+document.getElementById('modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+function showToast(msg, error) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = 'toast visible' + (error ? ' error' : '');
+  setTimeout(() => { toast.className = 'toast'; }, 3000);
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Init.
+loadConfig().then(() => checkDaemon());
+</script>
+</body>
+</html>
