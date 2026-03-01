@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"strconv"
+	"strings"
+	"syscall"
 	"text/tabwriter"
 
+	"github.com/josiahH-cf/orchestratr/internal/daemon"
 	"github.com/josiahH-cf/orchestratr/internal/registry"
 )
 
@@ -32,9 +38,144 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case "list":
 		return runList(stdout, stderr)
 
+	case "start":
+		return runStart(stdout, stderr)
+
+	case "stop":
+		return runStop(stdout, stderr)
+
+	case "status":
+		return runStatus(stdout, stderr)
+
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
+}
+
+// runStart launches the daemon in the foreground.
+func runStart(stdout, stderr io.Writer) error {
+	lockPath := lockPathFromEnv()
+	lock, err := daemon.AcquireLock(lockPath)
+	if err != nil {
+		return fmt.Errorf("cannot start: %w", err)
+	}
+	defer lock.Release()
+
+	// Load config for API port.
+	cfgPath := registry.DefaultConfigPath()
+	if envPath := os.Getenv("ORCHESTRATR_CONFIG"); envPath != "" {
+		cfgPath = envPath
+	}
+
+	apiPort := 9876 // default
+	cfg, err := registry.LoadAndValidate(cfgPath)
+	if err == nil && cfg.APIPort > 0 {
+		apiPort = cfg.APIPort
+	}
+
+	// Set up log file.
+	logPath := daemon.DefaultLogPath()
+	logFile, err := daemon.SetupLogFile(logPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: could not open log file: %v (logging to stderr)\n", err)
+	} else {
+		defer logFile.Close()
+	}
+
+	logger := log.New(stderr, "orchestratr: ", log.LstdFlags)
+	if logFile != nil {
+		logger = log.New(io.MultiWriter(stderr, logFile), "orchestratr: ", log.LstdFlags)
+	}
+
+	// Start health server.
+	healthSrv := daemon.NewHealthServer(apiPort)
+	go func() {
+		if srvErr := healthSrv.Start(); srvErr != nil {
+			logger.Printf("health server error: %v", srvErr)
+		}
+	}()
+	defer healthSrv.Stop()
+
+	// Write port discovery file.
+	portFilePath := daemon.DefaultPortFilePath()
+	if writeErr := daemon.WritePortFile(portFilePath, apiPort); writeErr != nil {
+		logger.Printf("warning: could not write port file: %v", writeErr)
+	} else {
+		defer daemon.RemovePortFile(portFilePath)
+	}
+
+	d := daemon.New(daemon.Config{
+		LogLevel: "info",
+		APIPort:  apiPort,
+	})
+	d.SetLogger(logger)
+
+	fmt.Fprintf(stdout, "orchestratr daemon starting on port %d\n", apiPort)
+	logger.Printf("PID %d, API port %d", os.Getpid(), apiPort)
+
+	return d.Run(context.Background())
+}
+
+// runStop sends SIGTERM to the running daemon.
+func runStop(stdout, stderr io.Writer) error {
+	pid, err := readPIDFile()
+	if err != nil {
+		return fmt.Errorf("daemon is not running: %w", err)
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return fmt.Errorf("finding process %d: %w", pid, err)
+	}
+
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		return fmt.Errorf("sending SIGTERM to PID %d: %w", pid, err)
+	}
+
+	fmt.Fprintf(stdout, "sent stop signal to orchestratr (PID %d)\n", pid)
+	return nil
+}
+
+// runStatus reports whether the daemon is running.
+func runStatus(stdout, stderr io.Writer) error {
+	pid, err := readPIDFile()
+	if err != nil {
+		fmt.Fprintln(stdout, "orchestratr is not running")
+		return nil
+	}
+
+	// Check if the process is alive.
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		fmt.Fprintln(stdout, "orchestratr is not running")
+		return nil
+	}
+
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		fmt.Fprintf(stdout, "orchestratr is not running (stale PID %d)\n", pid)
+		return nil
+	}
+
+	fmt.Fprintf(stdout, "orchestratr is running (PID %d)\n", pid)
+	return nil
+}
+
+// readPIDFile reads the daemon PID from the lock file.
+func readPIDFile() (int, error) {
+	data, err := os.ReadFile(lockPathFromEnv())
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(data)))
+}
+
+// lockPathFromEnv returns the lock file path, allowing override via
+// ORCHESTRATR_LOCK_PATH for testing.
+func lockPathFromEnv() string {
+	if p := os.Getenv("ORCHESTRATR_LOCK_PATH"); p != "" {
+		return p
+	}
+	return daemon.DefaultLockPath()
 }
 
 // runList loads the config and prints the app registry as a table.
