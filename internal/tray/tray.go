@@ -16,6 +16,9 @@ type Provider interface {
 	// Quit removes the tray icon and releases resources.
 	Quit()
 
+	// NotifyError displays an error notification via the system tray.
+	NotifyError(title, message string)
+
 	// OnPause registers a callback invoked when the user selects Pause.
 	OnPause(fn func())
 
@@ -29,10 +32,17 @@ type Provider interface {
 	OnConfigure(fn func())
 }
 
+// Notification records an error notification for testing.
+type Notification struct {
+	Title   string
+	Message string
+}
+
 // HeadlessProvider is a no-op tray implementation for headless, CI, and
 // testing environments where no display is available.
 type HeadlessProvider struct {
-	state string
+	state  string
+	notifs []Notification
 }
 
 // Setup is a no-op for headless mode.
@@ -59,5 +69,13 @@ func (h *HeadlessProvider) OnQuit(fn func()) {}
 // OnConfigure is a no-op for headless mode.
 func (h *HeadlessProvider) OnConfigure(fn func()) {}
 
+// NotifyError records the notification for later inspection (testing).
+func (h *HeadlessProvider) NotifyError(title, message string) {
+	h.notifs = append(h.notifs, Notification{Title: title, Message: message})
+}
+
 // LastState returns the last state set on the headless provider (for testing).
 func (h *HeadlessProvider) LastState() string { return h.state }
+
+// Notifications returns all recorded error notifications (for testing).
+func (h *HeadlessProvider) Notifications() []Notification { return h.notifs }

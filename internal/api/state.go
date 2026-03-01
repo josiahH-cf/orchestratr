@@ -17,8 +17,8 @@ type AppState struct {
 
 // StateTracker tracks the lifecycle state of all registered apps.
 type StateTracker struct {
-	mu    sync.RWMutex
-	apps  map[string]*AppState
+	mu   sync.RWMutex
+	apps map[string]*AppState
 }
 
 // NewStateTracker creates an empty StateTracker.
@@ -75,6 +75,38 @@ func (st *StateTracker) Get(name string) *AppState {
 	// Return a copy.
 	cp := *s
 	return &cp
+}
+
+// SetStopped marks an app as not launched and not ready, clearing
+// timestamps. It is a no-op for unknown apps.
+func (st *StateTracker) SetStopped(name string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	state, ok := st.apps[name]
+	if !ok {
+		return
+	}
+	state.Launched = false
+	state.Ready = false
+	state.LaunchedAt = nil
+	state.ReadyAt = nil
+}
+
+// Sync removes state entries for apps not in the provided name list.
+func (st *StateTracker) Sync(appNames []string) {
+	allowed := make(map[string]bool, len(appNames))
+	for _, name := range appNames {
+		allowed[name] = true
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for name := range st.apps {
+		if !allowed[name] {
+			delete(st.apps, name)
+		}
+	}
 }
 
 // All returns a copy of all tracked app states, sorted by name for

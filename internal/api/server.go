@@ -17,17 +17,23 @@ import (
 // reload the config and return an error if the reload failed.
 type ReloadFunc func() (*registry.Config, error)
 
+// TriggerFunc is called when POST /trigger is received, simulating
+// a leader key press. This enables the Wayland manual keybinding
+// fallback (orchestratr trigger).
+type TriggerFunc func() error
+
 // maxRequestBody is the maximum allowed request body size (1 MB).
 const maxRequestBody = 1 << 20
 
 // Server is the localhost HTTP API server for orchestratr.
 type Server struct {
-	port     int
-	version  string
-	reg      *registry.Registry
-	reloadFn ReloadFunc
-	state    *StateTracker
-	logger   *log.Logger
+	port      int
+	version   string
+	reg       *registry.Registry
+	reloadFn  ReloadFunc
+	triggerFn TriggerFunc
+	state     *StateTracker
+	logger    *log.Logger
 
 	mu     sync.Mutex
 	server *http.Server
@@ -57,6 +63,19 @@ func (s *Server) SetLogger(l *log.Logger) {
 	s.logger = l
 }
 
+// SetTriggerFunc sets the function called when POST /trigger is received.
+func (s *Server) SetTriggerFunc(fn TriggerFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.triggerFn = fn
+}
+
+// State returns the server's StateTracker for external callers that
+// need to synchronize state (e.g., during config reload).
+func (s *Server) State() *StateTracker {
+	return s.state
+}
+
 // Handler returns the HTTP handler with all routes and middleware.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -65,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/apps", s.handleApps)
 	mux.HandleFunc("/apps/", s.handleAppAction)
 	mux.HandleFunc("/reload", s.handleReload)
+	mux.HandleFunc("/trigger", s.handleTrigger)
 
 	// Catch-all for unknown routes.
 	mux.HandleFunc("/", s.handleNotFound)
@@ -219,11 +239,6 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 
 // handleAppAction routes /apps/{name}/{action} requests.
 func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
-
 	// Limit request body size.
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 
@@ -257,9 +272,29 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 
 	switch action {
 	case "launched":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
 		s.handleLaunched(w, r, name)
 	case "ready":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
 		s.handleReady(w, r, name)
+	case "stopped":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.handleStopped(w, r, name)
+	case "state":
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		s.handleState(w, r, name)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("unknown action %q", action))
 	}
@@ -275,6 +310,21 @@ func (s *Server) handleLaunched(w http.ResponseWriter, _ *http.Request, name str
 func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request, name string) {
 	s.state.SetReady(name)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "app": name, "state": "ready"})
+}
+
+// handleStopped marks an app as stopped (not launched, not ready).
+func (s *Server) handleStopped(w http.ResponseWriter, _ *http.Request, name string) {
+	s.state.SetStopped(name)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "app": name, "state": "stopped"})
+}
+
+// handleState returns the lifecycle state for a single app.
+func (s *Server) handleState(w http.ResponseWriter, _ *http.Request, name string) {
+	appState := s.state.Get(name)
+	if appState == nil {
+		appState = &AppState{Name: name}
+	}
+	writeJSON(w, http.StatusOK, appState)
 }
 
 // handleReload triggers a config hot-reload.
@@ -296,6 +346,29 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 		"apps":   cfg.Apps,
 	})
+}
+
+// handleTrigger simulates a leader key press via the API. This is
+// used by the Wayland manual keybinding fallback.
+func (s *Server) handleTrigger(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	s.mu.Lock()
+	fn := s.triggerFn
+	s.mu.Unlock()
+
+	if fn == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "hotkey engine not running")
+		return
+	}
+	if err := fn(); err != nil {
+		writeError(w, http.StatusInternalServerError, "trigger_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // handleNotFound is the catch-all handler for unknown routes.
