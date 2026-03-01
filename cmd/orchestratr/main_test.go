@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/josiahH-cf/orchestratr/internal/api"
+	"github.com/josiahH-cf/orchestratr/internal/daemon"
 	"github.com/josiahH-cf/orchestratr/internal/registry"
 )
 
@@ -28,8 +30,8 @@ func TestRun_Version(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "v0.0.0-dev") {
-		t.Errorf("output = %q, want version string", stdout.String())
+	if !strings.Contains(stdout.String(), Version) {
+		t.Errorf("output = %q, want version string %q", stdout.String(), Version)
 	}
 }
 
@@ -318,5 +320,139 @@ func TestRun_UsageIncludesTrigger(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "trigger") {
 		t.Errorf("usage output should mention 'trigger': %q", stdout.String())
+	}
+}
+
+func TestRun_ReloadNotRunning(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ORCHESTRATR_PORT_PATH", filepath.Join(dir, "no-such-port"))
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"reload"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("run(reload) should error when daemon is not running")
+	}
+	if !strings.Contains(err.Error(), "not running") {
+		t.Errorf("error = %q, want 'not running'", err.Error())
+	}
+}
+
+func TestRun_ReloadSuccess(t *testing.T) {
+	// Create a config file for the reload to load.
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yml")
+	content := `leader_key: ctrl+space
+apps:
+  - name: testapp
+    chord: t
+    command: echo hello
+    environment: native
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, _ := registry.LoadAndValidate(cfgPath)
+	reg := registry.NewRegistry(*cfg)
+
+	reloadFn := func() (*registry.Config, error) {
+		c, err := registry.LoadAndValidate(cfgPath)
+		if err != nil {
+			return nil, err
+		}
+		reg.Swap(*c)
+		return c, nil
+	}
+
+	// Start an API server.
+	srv := api.NewServer(0, "v0.0.0-dev", reg, reloadFn)
+	go func() { _ = srv.Start() }()
+	if !srv.WaitReady(2) {
+		t.Fatal("API server did not become ready")
+	}
+	defer srv.Stop()
+
+	// Write port file.
+	portFile := filepath.Join(dir, "port")
+	if err := daemon.WritePortFile(portFile, srv.Port()); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ORCHESTRATR_PORT_PATH", portFile)
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"reload"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run(reload) error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "config reloaded") {
+		t.Errorf("output = %q, want 'config reloaded'", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "1 apps") {
+		t.Errorf("output = %q, want '1 apps'", stdout.String())
+	}
+}
+
+func TestRun_ReloadValidationError(t *testing.T) {
+	dir := t.TempDir()
+
+	// Start with valid config.
+	cfgPath := filepath.Join(dir, "config.yml")
+	validYAML := `leader_key: ctrl+space
+apps:
+  - name: app1
+    chord: a
+    command: cmd1
+    environment: native
+`
+	if err := os.WriteFile(cfgPath, []byte(validYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, _ := registry.LoadAndValidate(cfgPath)
+	reg := registry.NewRegistry(*cfg)
+
+	reloadFn := func() (*registry.Config, error) {
+		c, err := registry.LoadAndValidate(cfgPath)
+		if err != nil {
+			return nil, err
+		}
+		reg.Swap(*c)
+		return c, nil
+	}
+
+	srv := api.NewServer(0, "v0.0.0-dev", reg, reloadFn)
+	go func() { _ = srv.Start() }()
+	if !srv.WaitReady(2) {
+		t.Fatal("API server did not become ready")
+	}
+	defer srv.Stop()
+
+	portFile := filepath.Join(dir, "port")
+	if err := daemon.WritePortFile(portFile, srv.Port()); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ORCHESTRATR_PORT_PATH", portFile)
+
+	// Now write an invalid config (duplicate chords).
+	badYAML := `leader_key: ctrl+space
+apps:
+  - name: app1
+    chord: a
+    command: cmd1
+  - name: app2
+    chord: a
+    command: cmd2
+`
+	if err := os.WriteFile(cfgPath, []byte(badYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"reload"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("run(reload) should error on validation failure")
+	}
+	if !strings.Contains(err.Error(), "reload failed") {
+		t.Errorf("error = %q, want 'reload failed'", err.Error())
 	}
 }

@@ -2,6 +2,7 @@ package hotkey
 
 import (
 	"errors"
+	"os"
 	"runtime"
 	"testing"
 )
@@ -71,6 +72,31 @@ func TestNewPlatformListener_Reports(t *testing.T) {
 	// Method should be non-empty.
 	if info.Method == "" {
 		t.Error("Info().Method is empty")
+	}
+
+	t.Logf("platform listener: %s", info)
+}
+
+func TestNewPlatformListener_X11Detected(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("X11 detection only tested on Linux")
+	}
+	if os.Getenv("DISPLAY") == "" {
+		t.Skip("DISPLAY not set; X11 listener cannot be tested")
+	}
+
+	l := NewPlatformListener()
+	info := l.Info()
+
+	// If the X11 connection succeeds, we expect x11_xgrabkey. If it
+	// fails (e.g., no actual X server), the fallback is acceptable.
+	switch info.Method {
+	case "x11_xgrabkey":
+		t.Logf("X11 listener active")
+	case "wayland_stub", "stub":
+		t.Logf("X11 connection unavailable, fell back to %s", info.Method)
+	default:
+		t.Errorf("unexpected method %q on Linux with DISPLAY set", info.Method)
 	}
 }
 

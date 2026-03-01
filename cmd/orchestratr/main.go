@@ -13,12 +13,18 @@ import (
 	"strings"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/josiahH-cf/orchestratr/internal/api"
 	"github.com/josiahH-cf/orchestratr/internal/daemon"
 	"github.com/josiahH-cf/orchestratr/internal/hotkey"
+	"github.com/josiahH-cf/orchestratr/internal/launcher"
 	"github.com/josiahH-cf/orchestratr/internal/registry"
+	"github.com/josiahH-cf/orchestratr/internal/tray"
 )
+
+// Version is set at build time via -ldflags "-X main.Version=..."
+var Version = "v0.0.0-dev"
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -36,7 +42,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	switch args[0] {
 	case "version":
-		fmt.Fprintln(stdout, "orchestratr v0.0.0-dev")
+		fmt.Fprintf(stdout, "orchestratr %s\n", Version)
 		return nil
 
 	case "list":
@@ -53,6 +59,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	case "trigger":
 		return runTrigger(stdout, stderr)
+
+	case "reload":
+		return runReload(stdout, stderr)
 
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
@@ -72,6 +81,11 @@ func runStart(stdout, stderr io.Writer) error {
 	cfgPath := registry.DefaultConfigPath()
 	if envPath := os.Getenv("ORCHESTRATR_CONFIG"); envPath != "" {
 		cfgPath = envPath
+	}
+
+	// Ensure default config exists on first run.
+	if _, ensureErr := registry.EnsureDefaults(cfgPath); ensureErr != nil {
+		fmt.Fprintf(stderr, "warning: could not create default config: %v\n", ensureErr)
 	}
 
 	apiPort := 9876 // default
@@ -100,7 +114,12 @@ func runStart(stdout, stderr io.Writer) error {
 		logger = log.New(io.MultiWriter(stderr, logFile), "orchestratr: ", log.LstdFlags)
 	}
 
-	// Build reload function for POST /reload.
+	// Declare hotkeyEngine and apiSrv early so the reload closure
+	// can capture them. They are assigned real values later.
+	var hotkeyEngine *hotkey.Engine
+	var apiSrv *api.Server
+
+	// Build reload function for POST /reload and file watcher.
 	reloadFn := func() (*registry.Config, error) {
 		newCfg, loadErr := registry.LoadAndValidate(cfgPath)
 		if loadErr != nil {
@@ -109,11 +128,34 @@ func runStart(stdout, stderr io.Writer) error {
 		if reg != nil {
 			reg.Swap(*newCfg)
 		}
+
+		// Update hotkey chord map.
+		if hotkeyEngine != nil {
+			newChords := buildChords(newCfg.Apps)
+			if swapErr := hotkeyEngine.SwapChords(newChords); swapErr != nil {
+				logger.Printf("warning: hotkey chord swap failed: %v", swapErr)
+			}
+		}
+
+		// Sync state tracker: remove entries for apps no longer in config.
+		if apiSrv != nil {
+			names := make([]string, len(newCfg.Apps))
+			for i, a := range newCfg.Apps {
+				names[i] = a.Name
+			}
+			apiSrv.State().Sync(names)
+		}
+
 		return newCfg, nil
 	}
 
+	// Warn on port 0.
+	if cfg != nil && cfg.APIPort == 0 {
+		logger.Println("warning: api_port is 0; a random port will be assigned each start")
+	}
+
 	// Start API server.
-	apiSrv := api.NewServer(apiPort, "v0.0.0-dev", reg, reloadFn)
+	apiSrv = api.NewServer(apiPort, Version, reg, reloadFn)
 	go func() {
 		if srvErr := apiSrv.Start(); srvErr != nil && srvErr != http.ErrServerClosed {
 			logger.Printf("API server error: %v", srvErr)
@@ -142,8 +184,27 @@ func runStart(stdout, stderr io.Writer) error {
 	})
 	d.SetLogger(logger)
 
+	// Set up system tray.
+	var trayProvider tray.Provider = &tray.HeadlessProvider{}
+	if setupErr := trayProvider.Setup(); setupErr != nil {
+		logger.Printf("warning: tray setup failed: %v", setupErr)
+	}
+
+	// Build the app launcher.
+	exec := launcher.NewPlatformExecutor(
+		launcher.WithLogger(logger),
+		launcher.WithExitCallback(func(name string, exitErr error) {
+			apiSrv.State().SetStopped(name)
+			if exitErr != nil {
+				logger.Printf("app %q stopped with error: %v", name, exitErr)
+			} else {
+				logger.Printf("app %q stopped", name)
+			}
+		}),
+	)
+	defer exec.StopAll()
+
 	// Build and start the hotkey engine.
-	var hotkeyEngine *hotkey.Engine
 	if cfg != nil {
 		chords := buildChords(cfg.Apps)
 		listener := hotkey.NewPlatformListener()
@@ -153,7 +214,7 @@ func runStart(stdout, stderr io.Writer) error {
 			Chords:         chords,
 			OnAction: func(action string) {
 				logger.Printf("chord dispatched: %s", action)
-				// TODO: integrate with launcher to actually launch apps
+				launchApp(exec, reg, apiSrv, logger, action, trayProvider)
 			},
 			Logger: logger,
 		}, listener)
@@ -174,10 +235,58 @@ func runStart(stdout, stderr io.Writer) error {
 		}
 	}
 
+	// Wire tray callbacks now that daemon and engine are initialized.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	trayProvider.OnPause(func() {
+		if err := d.Pause(); err != nil {
+			logger.Printf("pause failed: %v", err)
+			return
+		}
+		if hotkeyEngine != nil {
+			hotkeyEngine.Pause()
+		}
+		_ = trayProvider.SetState("paused")
+	})
+	trayProvider.OnResume(func() {
+		if err := d.Resume(); err != nil {
+			logger.Printf("resume failed: %v", err)
+			return
+		}
+		if hotkeyEngine != nil {
+			hotkeyEngine.Resume()
+		}
+		_ = trayProvider.SetState("running")
+	})
+	trayProvider.OnQuit(func() {
+		logger.Println("quit requested via tray")
+		cancel()
+	})
+	trayProvider.OnConfigure(func() {
+		logger.Println("configure requested via tray")
+		// TODO: open management GUI (spec 06)
+	})
+	_ = trayProvider.SetState("running")
+
+	// Start file watcher for config hot-reload.
+	watcherReload := func(path string) error {
+		_, err := reloadFn()
+		return err
+	}
+	w := registry.NewWatcher(cfgPath, watcherReload, registry.WithLogger(logger))
+	if watchErr := w.Start(context.Background()); watchErr != nil {
+		logger.Printf("warning: file watcher not available: %v", watchErr)
+	} else {
+		defer w.Stop()
+	}
+
 	fmt.Fprintf(stdout, "orchestratr daemon starting on port %d\n", actualPort)
 	logger.Printf("PID %d, API port %d", os.Getpid(), actualPort)
 
-	return d.Run(context.Background())
+	err = d.Run(ctx)
+	trayProvider.Quit()
+	return err
 }
 
 // runStop sends SIGTERM to the running daemon.
@@ -243,6 +352,8 @@ func lockPathFromEnv() string {
 }
 
 // runList loads the config and prints the app registry as a table.
+// When the daemon is running, it enriches the table with live
+// running/stopped status from the API.
 func runList(stdout, stderr io.Writer) error {
 	path := registry.DefaultConfigPath()
 
@@ -265,17 +376,81 @@ func runList(stdout, stderr io.Writer) error {
 		return nil
 	}
 
+	// Try to fetch live state from the running daemon.
+	states := fetchAppStates()
+
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tCHORD\tCOMMAND\tENV\tDESCRIPTION")
-	for _, app := range cfg.Apps {
-		env := app.Environment
-		if env == "" {
-			env = "native"
+	if states != nil {
+		fmt.Fprintln(w, "NAME\tCHORD\tSTATUS\tCOMMAND\tENV\tDESCRIPTION")
+		for _, app := range cfg.Apps {
+			status := "stopped"
+			if s, ok := states[app.Name]; ok && s.Launched {
+				status = "launched"
+				if s.Ready {
+					status = "ready"
+				}
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				app.Name, app.Chord, status, app.Command, app.Environment, app.Description)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			app.Name, app.Chord, app.Command, env, app.Description)
+	} else {
+		fmt.Fprintln(w, "NAME\tCHORD\tCOMMAND\tENV\tDESCRIPTION")
+		for _, app := range cfg.Apps {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+				app.Name, app.Chord, app.Command, app.Environment, app.Description)
+		}
 	}
 	return w.Flush()
+}
+
+// fetchAppStates attempts to contact the running daemon and retrieve
+// live state for all apps. Returns nil if the daemon is not reachable.
+func fetchAppStates() map[string]*api.AppState {
+	port, err := readPort()
+	if err != nil {
+		return nil
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
+	if err != nil {
+		return nil
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	// Fetch per-app state. The /apps endpoint returns registry entries;
+	// we need /apps/{name}/state for each. First get the app list.
+	appsResp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/apps", port))
+	if err != nil {
+		return nil
+	}
+	defer appsResp.Body.Close()
+
+	var apps []struct {
+		Name string `json:"name"`
+	}
+	if decErr := json.NewDecoder(appsResp.Body).Decode(&apps); decErr != nil {
+		return nil
+	}
+
+	states := make(map[string]*api.AppState, len(apps))
+	for _, a := range apps {
+		stateResp, stateErr := client.Get(fmt.Sprintf("http://127.0.0.1:%d/apps/%s/state", port, a.Name))
+		if stateErr != nil {
+			continue
+		}
+		var s api.AppState
+		decErr := json.NewDecoder(stateResp.Body).Decode(&s)
+		stateResp.Body.Close()
+		if decErr != nil {
+			continue
+		}
+		states[a.Name] = &s
+	}
+	return states
 }
 
 // buildChords converts registry app entries into hotkey.Chord values.
@@ -296,6 +471,45 @@ func buildChords(apps []registry.AppEntry) []hotkey.Chord {
 		chords = append(chords, hotkey.Chord{Key: k, Action: app.Name})
 	}
 	return chords
+}
+
+// launchApp looks up an app by name in the registry, checks if it is
+// already running (attempting bring-to-front if so), and launches it
+// via the executor. It updates the API state tracker on success and
+// sends a tray notification on failure.
+func launchApp(exec launcher.Executor, reg *registry.Registry, apiSrv *api.Server, logger *log.Logger, name string, trayProv tray.Provider) {
+	if reg == nil {
+		logger.Printf("launch %q: registry not loaded", name)
+		return
+	}
+
+	app, found := reg.FindByName(name)
+	if !found {
+		logger.Printf("launch %q: app not found in registry", name)
+		return
+	}
+
+	if exec.IsRunning(name) {
+		pid, _ := exec.PID(name)
+		if err := launcher.FocusWindow(pid); err != nil {
+			logger.Printf("focus %q (PID %d) failed: %v", name, pid, err)
+		} else {
+			logger.Printf("focused %q (PID %d)", name, pid)
+		}
+		return
+	}
+
+	result, err := exec.Launch(app)
+	if err != nil {
+		logger.Printf("launch %q failed: %v", name, err)
+		if trayProv != nil {
+			trayProv.NotifyError("Launch Failed", fmt.Sprintf("%s: %v", name, err))
+		}
+		return
+	}
+
+	logger.Printf("launched %q (PID %d)", name, result.PID)
+	apiSrv.State().SetLaunched(name)
 }
 
 // runTrigger sends a trigger request to the running daemon's API,
@@ -327,6 +541,42 @@ func runTrigger(stdout, stderr io.Writer) error {
 		return fmt.Errorf("trigger failed: %s", errResp.Error)
 	}
 	return fmt.Errorf("trigger failed: HTTP %d", resp.StatusCode)
+}
+
+// runReload sends a reload request to the running daemon's API.
+func runReload(stdout, stderr io.Writer) error {
+	port, err := readPort()
+	if err != nil {
+		return fmt.Errorf("daemon is not running: %w", err)
+	}
+
+	url := fmt.Sprintf("http://127.0.0.1:%d/reload", port)
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		return fmt.Errorf("sending reload: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var result struct {
+			Status string `json:"status"`
+			Apps   []any  `json:"apps"`
+		}
+		if decErr := json.NewDecoder(resp.Body).Decode(&result); decErr == nil {
+			fmt.Fprintf(stdout, "config reloaded (%d apps)\n", len(result.Apps))
+		} else {
+			fmt.Fprintln(stdout, "config reloaded")
+		}
+		return nil
+	}
+
+	var errResp struct {
+		Error string `json:"error"`
+	}
+	if decErr := json.NewDecoder(resp.Body).Decode(&errResp); decErr == nil && errResp.Error != "" {
+		return fmt.Errorf("reload failed: %s", errResp.Error)
+	}
+	return fmt.Errorf("reload failed: HTTP %d", resp.StatusCode)
 }
 
 // readPort reads the daemon port from the port discovery file.

@@ -313,3 +313,34 @@ apps:
 		t.Errorf("ChordTimeoutMs = %d, want default %d", cfg.ChordTimeoutMs, 2000)
 	}
 }
+
+func TestLoad_NormalizesEmptyEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+
+	content := `
+apps:
+  - name: app1
+    chord: a
+    command: "echo hi"
+  - name: app2
+    chord: b
+    command: "echo bye"
+    environment: wsl
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Apps[0].Environment != "native" {
+		t.Errorf("Apps[0].Environment = %q, want %q", cfg.Apps[0].Environment, "native")
+	}
+	if cfg.Apps[1].Environment != "wsl" {
+		t.Errorf("Apps[1].Environment = %q, want %q (should be preserved)", cfg.Apps[1].Environment, "wsl")
+	}
+}

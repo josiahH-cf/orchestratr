@@ -70,8 +70,9 @@ type Engine struct {
 	stopCh   chan struct{}
 	done     chan struct{}
 
-	mu    sync.RWMutex
-	state EngineState
+	mu     sync.RWMutex
+	state  EngineState
+	paused bool
 }
 
 // NewEngine creates a hotkey Engine from the given config and Listener.
@@ -121,6 +122,24 @@ func NewEngine(cfg EngineConfig, listener Listener) (*Engine, error) {
 		done:     make(chan struct{}),
 		state:    StateIdle,
 	}, nil
+}
+
+// SwapChords atomically replaces the engine's chord lookup table.
+// Returns an error if the new chord set contains duplicates.
+func (e *Engine) SwapChords(chords []Chord) error {
+	newMap := make(map[string]string, len(chords))
+	for _, c := range chords {
+		canonical := c.Key.String()
+		if _, dup := newMap[canonical]; dup {
+			return fmt.Errorf("duplicate chord %q", canonical)
+		}
+		newMap[canonical] = c.Action
+	}
+
+	e.mu.Lock()
+	e.chords = newMap
+	e.mu.Unlock()
+	return nil
 }
 
 // State returns the engine's current state.
@@ -186,6 +205,34 @@ func (e *Engine) Stop() error {
 	return err
 }
 
+// Pause disables hotkey processing without stopping the engine.
+// Key events are silently discarded while paused.
+func (e *Engine) Pause() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if !e.paused {
+		e.paused = true
+		e.logger.Println("hotkey engine paused")
+	}
+}
+
+// Resume re-enables hotkey processing after a Pause.
+func (e *Engine) Resume() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.paused {
+		e.paused = false
+		e.logger.Println("hotkey engine resumed")
+	}
+}
+
+// Paused reports whether the engine is currently paused.
+func (e *Engine) Paused() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.paused
+}
+
 // Trigger simulates a leader key press via the API. This puts the
 // engine into ChordWait state as if the physical leader key were
 // pressed. It is used by the Wayland manual fallback (orchestratr
@@ -195,6 +242,13 @@ func (e *Engine) Trigger() error {
 	case <-e.stopCh:
 		return fmt.Errorf("engine is stopped")
 	default:
+	}
+
+	e.mu.RLock()
+	paused := e.paused
+	e.mu.RUnlock()
+	if paused {
+		return fmt.Errorf("engine is paused")
 	}
 
 	e.events <- KeyEvent{Key: e.leader, Pressed: true}
@@ -226,7 +280,12 @@ func (e *Engine) loop() {
 
 			e.mu.RLock()
 			st := e.state
+			paused := e.paused
 			e.mu.RUnlock()
+
+			if paused {
+				continue // silently discard events while paused
+			}
 
 			switch st {
 			case StateIdle:
@@ -248,7 +307,10 @@ func (e *Engine) loop() {
 				}
 
 				canonical := evt.Key.String()
-				if action, ok := e.chords[canonical]; ok {
+				e.mu.RLock()
+				action, ok := e.chords[canonical]
+				e.mu.RUnlock()
+				if ok {
 					e.logger.Printf("chord matched: %s → %s", canonical, action)
 					e.onAction(action)
 				} else {

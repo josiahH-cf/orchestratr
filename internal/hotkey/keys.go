@@ -109,10 +109,10 @@ func ParseKey(s string) (Key, error) {
 
 // knownConflicts maps leader key strings to the system they conflict with.
 var knownConflicts = map[string]string{
-	"ctrl+space":  "common IDE autocomplete / CJK input method toggle",
-	"ctrl+escape": "Windows Start menu",
-	"super+space": "macOS Spotlight / GNOME Activities",
-	"alt+space":   "Windows window menu",
+	"ctrl+space":      "common IDE autocomplete / CJK input method toggle",
+	"ctrl+escape":     "Windows Start menu",
+	"super+space":     "macOS Spotlight / GNOME Activities",
+	"alt+space":       "Windows window menu",
 	"ctrl+alt+delete": "system interrupt on Windows/Linux",
 }
 

@@ -70,6 +70,12 @@ func (s *Server) SetTriggerFunc(fn TriggerFunc) {
 	s.triggerFn = fn
 }
 
+// State returns the server's StateTracker for external callers that
+// need to synchronize state (e.g., during config reload).
+func (s *Server) State() *StateTracker {
+	return s.state
+}
+
 // Handler returns the HTTP handler with all routes and middleware.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -233,11 +239,6 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 
 // handleAppAction routes /apps/{name}/{action} requests.
 func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
-
 	// Limit request body size.
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 
@@ -271,9 +272,29 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 
 	switch action {
 	case "launched":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
 		s.handleLaunched(w, r, name)
 	case "ready":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
 		s.handleReady(w, r, name)
+	case "stopped":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.handleStopped(w, r, name)
+	case "state":
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		s.handleState(w, r, name)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("unknown action %q", action))
 	}
@@ -289,6 +310,21 @@ func (s *Server) handleLaunched(w http.ResponseWriter, _ *http.Request, name str
 func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request, name string) {
 	s.state.SetReady(name)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "app": name, "state": "ready"})
+}
+
+// handleStopped marks an app as stopped (not launched, not ready).
+func (s *Server) handleStopped(w http.ResponseWriter, _ *http.Request, name string) {
+	s.state.SetStopped(name)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "app": name, "state": "stopped"})
+}
+
+// handleState returns the lifecycle state for a single app.
+func (s *Server) handleState(w http.ResponseWriter, _ *http.Request, name string) {
+	appState := s.state.Get(name)
+	if appState == nil {
+		appState = &AppState{Name: name}
+	}
+	writeJSON(w, http.StatusOK, appState)
 }
 
 // handleReload triggers a config hot-reload.

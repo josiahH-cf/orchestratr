@@ -163,11 +163,11 @@ func TestValidateChord_ValidChords(t *testing.T) {
 
 func TestValidateChord_InvalidChords(t *testing.T) {
 	invalidChords := []string{
-		"ab",       // multi-char, not a key name
-		"ctrl",     // not in well-known keys
-		"alt",      // not in well-known keys
-		"foobar",   // random string
-		"ctrl+a",   // modifier combo, not a chord
+		"ab",     // multi-char, not a key name
+		"ctrl",   // not in well-known keys
+		"alt",    // not in well-known keys
+		"foobar", // random string
+		"ctrl+a", // modifier combo, not a chord
 	}
 	for _, chord := range invalidChords {
 		t.Run(chord, func(t *testing.T) {
@@ -187,10 +187,10 @@ func TestValidateEnvironment(t *testing.T) {
 		{"wsl", false},
 		{"wsl:Ubuntu-22.04", false},
 		{"wsl:Debian", false},
-		{"wsl:", true},      // empty distro
-		{"docker", true},    // unknown
-		{"", false},         // empty is handled separately (optional field)
-		{"NATIVE", true},    // case-sensitive
+		{"wsl:", true},   // empty distro
+		{"docker", true}, // unknown
+		{"", false},      // empty is handled separately (optional field)
+		{"NATIVE", true}, // case-sensitive
 	}
 
 	for _, tt := range tests {

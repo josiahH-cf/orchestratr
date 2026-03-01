@@ -522,3 +522,189 @@ func TestEngine_TriggerAfterStop(t *testing.T) {
 		t.Error("Trigger after Stop should return error")
 	}
 }
+
+func TestEngine_SwapChords(t *testing.T) {
+	listener := newTestListener()
+	leader := Key{Modifiers: ModCtrl, Code: "space"}
+
+	dispatches := make(chan string, 1)
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 2000,
+		Chords:         []Chord{{Key: Key{Code: "e"}, Action: "espansr"}},
+		OnAction: func(action string) {
+			dispatches <- action
+		},
+		Logger: testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer e.Stop()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Swap to a new chord set.
+	if err := e.SwapChords([]Chord{
+		{Key: Key{Code: "f"}, Action: "firefox"},
+	}); err != nil {
+		t.Fatalf("SwapChords error: %v", err)
+	}
+
+	// Old chord should no longer work.
+	listener.inject(leader, true)
+	time.Sleep(20 * time.Millisecond)
+	listener.inject(Key{Code: "e"}, true)
+	time.Sleep(50 * time.Millisecond)
+
+	select {
+	case action := <-dispatches:
+		t.Fatalf("old chord should not dispatch, got %q", action)
+	default:
+		// good — no dispatch
+	}
+
+	// New chord should work.
+	listener.inject(leader, true)
+	time.Sleep(20 * time.Millisecond)
+	listener.inject(Key{Code: "f"}, true)
+
+	select {
+	case action := <-dispatches:
+		if action != "firefox" {
+			t.Errorf("dispatched = %q, want %q", action, "firefox")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for dispatch")
+	}
+}
+
+func TestEngine_Pause(t *testing.T) {
+	listener := newTestListener()
+	leader := Key{Modifiers: ModCtrl, Code: "space"}
+	chordE := Key{Code: "e"}
+
+	dispatches := make(chan string, 1)
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 2000,
+		Chords:         []Chord{{Key: chordE, Action: "espansr"}},
+		OnAction: func(action string) {
+			dispatches <- action
+		},
+		Logger: testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer e.Stop()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Pause the engine.
+	e.Pause()
+	if !e.Paused() {
+		t.Fatal("expected Paused() = true")
+	}
+
+	// Leader key should be ignored while paused.
+	listener.inject(leader, true)
+	time.Sleep(50 * time.Millisecond)
+
+	if e.State() != StateIdle {
+		t.Errorf("state = %v, want idle (paused should ignore leader)", e.State())
+	}
+
+	// Trigger should fail while paused.
+	if err := e.Trigger(); err == nil {
+		t.Error("Trigger should fail while paused")
+	}
+
+	// Resume the engine.
+	e.Resume()
+	if e.Paused() {
+		t.Fatal("expected Paused() = false after Resume")
+	}
+
+	// Hotkeys should work again.
+	listener.inject(leader, true)
+	time.Sleep(20 * time.Millisecond)
+	listener.inject(chordE, true)
+
+	select {
+	case action := <-dispatches:
+		if action != "espansr" {
+			t.Errorf("dispatched = %q, want %q", action, "espansr")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for dispatch after Resume")
+	}
+}
+
+func TestEngine_PauseIdempotent(t *testing.T) {
+	listener := newTestListener()
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 1000,
+		OnAction:       func(string) {},
+		Logger:         testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	// Double Pause should not panic.
+	e.Pause()
+	e.Pause()
+	if !e.Paused() {
+		t.Error("expected Paused() = true")
+	}
+
+	// Double Resume should not panic.
+	e.Resume()
+	e.Resume()
+	if e.Paused() {
+		t.Error("expected Paused() = false")
+	}
+}
+
+func TestEngine_SwapChords_DuplicateRejected(t *testing.T) {
+	listener := newTestListener()
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 1000,
+		Chords:         []Chord{{Key: Key{Code: "e"}, Action: "espansr"}},
+		OnAction:       func(string) {},
+		Logger:         testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	err = e.SwapChords([]Chord{
+		{Key: Key{Code: "a"}, Action: "app1"},
+		{Key: Key{Code: "a"}, Action: "app2"},
+	})
+	if err == nil {
+		t.Fatal("SwapChords should reject duplicates")
+	}
+	if !containsLower(err.Error(), "duplicate") {
+		t.Errorf("error = %q, want 'duplicate'", err.Error())
+	}
+
+	// Original chords should be unchanged.
+	e.mu.RLock()
+	_, hasE := e.chords["e"]
+	e.mu.RUnlock()
+	if !hasE {
+		t.Error("original chord 'e' should be preserved after failed swap")
+	}
+}

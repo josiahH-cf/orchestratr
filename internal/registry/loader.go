@@ -23,6 +23,14 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
+	// Normalize empty environment to "native" so all consumers see
+	// a consistent value.
+	for i := range cfg.Apps {
+		if cfg.Apps[i].Environment == "" {
+			cfg.Apps[i].Environment = "native"
+		}
+	}
+
 	return &cfg, nil
 }
 
