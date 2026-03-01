@@ -4,22 +4,22 @@ package registry
 
 // Config represents the top-level orchestratr configuration file.
 type Config struct {
-	LeaderKey      string     `yaml:"leader_key"`
-	ChordTimeoutMs int        `yaml:"chord_timeout_ms"`
-	APIPort        int        `yaml:"api_port"`
-	LogLevel       string     `yaml:"log_level"`
-	Apps           []AppEntry `yaml:"apps"`
+	LeaderKey      string     `yaml:"leader_key" json:"leader_key"`
+	ChordTimeoutMs int        `yaml:"chord_timeout_ms" json:"chord_timeout_ms"`
+	APIPort        int        `yaml:"api_port" json:"api_port"`
+	LogLevel       string     `yaml:"log_level" json:"log_level"`
+	Apps           []AppEntry `yaml:"apps" json:"apps"`
 }
 
 // AppEntry describes a single application registered in the config.
 type AppEntry struct {
-	Name           string `yaml:"name"`
-	Chord          string `yaml:"chord"`
-	Command        string `yaml:"command"`
-	Environment    string `yaml:"environment"`
-	Description    string `yaml:"description,omitempty"`
-	ReadyCmd       string `yaml:"ready_cmd,omitempty"`
-	ReadyTimeoutMs int    `yaml:"ready_timeout_ms,omitempty"`
+	Name           string `yaml:"name" json:"name"`
+	Chord          string `yaml:"chord" json:"chord"`
+	Command        string `yaml:"command" json:"command"`
+	Environment    string `yaml:"environment" json:"environment"`
+	Description    string `yaml:"description,omitempty" json:"description,omitempty"`
+	ReadyCmd       string `yaml:"ready_cmd,omitempty" json:"ready_cmd,omitempty"`
+	ReadyTimeoutMs int    `yaml:"ready_timeout_ms,omitempty" json:"ready_timeout_ms,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible default values and an

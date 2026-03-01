@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/josiahH-cf/orchestratr/internal/api"
 	"github.com/josiahH-cf/orchestratr/internal/daemon"
 	"github.com/josiahH-cf/orchestratr/internal/registry"
 )
@@ -73,6 +75,12 @@ func runStart(stdout, stderr io.Writer) error {
 		apiPort = cfg.APIPort
 	}
 
+	// Build registry from config.
+	var reg *registry.Registry
+	if cfg != nil {
+		reg = registry.NewRegistry(*cfg)
+	}
+
 	// Set up log file.
 	logPath := daemon.DefaultLogPath()
 	logFile, err := daemon.SetupLogFile(logPath)
@@ -87,18 +95,37 @@ func runStart(stdout, stderr io.Writer) error {
 		logger = log.New(io.MultiWriter(stderr, logFile), "orchestratr: ", log.LstdFlags)
 	}
 
-	// Start health server.
-	healthSrv := daemon.NewHealthServer(apiPort)
+	// Build reload function for POST /reload.
+	reloadFn := func() (*registry.Config, error) {
+		newCfg, loadErr := registry.LoadAndValidate(cfgPath)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if reg != nil {
+			reg.Swap(*newCfg)
+		}
+		return newCfg, nil
+	}
+
+	// Start API server.
+	apiSrv := api.NewServer(apiPort, "v0.0.0-dev", reg, reloadFn)
 	go func() {
-		if srvErr := healthSrv.Start(); srvErr != nil {
-			logger.Printf("health server error: %v", srvErr)
+		if srvErr := apiSrv.Start(); srvErr != nil && srvErr != http.ErrServerClosed {
+			logger.Printf("API server error: %v", srvErr)
 		}
 	}()
-	defer healthSrv.Stop()
+	defer apiSrv.Stop()
+
+	// Wait for the API server to be listening before writing the
+	// port file; otherwise clients may read a port that isn't ready.
+	if !apiSrv.WaitReady(5) {
+		logger.Println("warning: API server did not become ready within 5s")
+	}
 
 	// Write port discovery file.
 	portFilePath := daemon.DefaultPortFilePath()
-	if writeErr := daemon.WritePortFile(portFilePath, apiPort); writeErr != nil {
+	actualPort := apiSrv.Port()
+	if writeErr := daemon.WritePortFile(portFilePath, actualPort); writeErr != nil {
 		logger.Printf("warning: could not write port file: %v", writeErr)
 	} else {
 		defer daemon.RemovePortFile(portFilePath)
@@ -106,12 +133,12 @@ func runStart(stdout, stderr io.Writer) error {
 
 	d := daemon.New(daemon.Config{
 		LogLevel: "info",
-		APIPort:  apiPort,
+		APIPort:  actualPort,
 	})
 	d.SetLogger(logger)
 
-	fmt.Fprintf(stdout, "orchestratr daemon starting on port %d\n", apiPort)
-	logger.Printf("PID %d, API port %d", os.Getpid(), apiPort)
+	fmt.Fprintf(stdout, "orchestratr daemon starting on port %d\n", actualPort)
+	logger.Printf("PID %d, API port %d", os.Getpid(), actualPort)
 
 	return d.Run(context.Background())
 }
