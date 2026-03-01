@@ -6,8 +6,8 @@
 ## Status
 
 - Total: 3
-- Complete: 0
-- Remaining: 3
+- Complete: 3
+- Remaining: 0
 
 ## Task List
 
@@ -19,7 +19,7 @@
   - Leader key is configurable via app config (not hardcoded)
   - After leader activation, chord keystrokes are captured for the timeout window
   - If mapped chord received: dispatch action; if unmapped or timeout: exit silently
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ### Task 2: Platform Listener Stubs with Build Tags
 
@@ -30,7 +30,7 @@
   - Engine reports current platform and registration method at startup
   - Warning emitted if leader key conflicts with common OS shortcuts
   - Hotkey registrations cleanly released on shutdown
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ### Task 3: Daemon Integration
 
@@ -40,7 +40,7 @@
   - Hotkey registrations cleanly released on daemon pause, shutdown, or crash recovery
   - Engine reports platform and registration method at startup
   - Chord keystrokes captured without leaking to focused application (via Engine's suppression model)
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ## Test Strategy
 

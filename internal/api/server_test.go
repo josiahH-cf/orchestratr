@@ -321,3 +321,63 @@ func TestStateTracker_AllDeterministic(t *testing.T) {
 		t.Errorf("all[2].Name = %q, want %q", all[2].Name, "zebra")
 	}
 }
+func TestTrigger_NoHandler(t *testing.T) {
+	s := NewServer(0, "test", nil, nil)
+	handler := s.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/trigger", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestTrigger_Success(t *testing.T) {
+	s := NewServer(0, "test", nil, nil)
+	called := false
+	s.SetTriggerFunc(func() error {
+		called = true
+		return nil
+	})
+
+	handler := s.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/trigger", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if !called {
+		t.Error("trigger func was not called")
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if resp["status"] != "ok" {
+		t.Errorf("status = %q, want %q", resp["status"], "ok")
+	}
+}
+
+func TestTrigger_MethodNotAllowed(t *testing.T) {
+	s := NewServer(0, "test", nil, nil)
+	handler := s.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/trigger", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+	if w.Header().Get("Allow") != http.MethodPost {
+		t.Errorf("Allow = %q, want %q", w.Header().Get("Allow"), http.MethodPost)
+	}
+}

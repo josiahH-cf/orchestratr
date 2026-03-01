@@ -452,3 +452,73 @@ func TestEngineState_String(t *testing.T) {
 		t.Errorf("unknown state string = %q", EngineState(99).String())
 	}
 }
+func TestEngine_Trigger(t *testing.T) {
+	listener := newTestListener()
+	chordE := Key{Code: "e"}
+
+	dispatches := make(chan string, 1)
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 2000,
+		Chords:         []Chord{{Key: chordE, Action: "espansr"}},
+		OnAction: func(action string) {
+			dispatches <- action
+		},
+		Logger: testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer e.Stop()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Trigger simulates leader key press via API.
+	if err := e.Trigger(); err != nil {
+		t.Fatalf("Trigger error: %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	if e.State() != StateChordWait {
+		t.Fatalf("state = %v, want chord_wait after Trigger", e.State())
+	}
+
+	// Now send chord via listener — should dispatch.
+	listener.inject(chordE, true)
+
+	select {
+	case action := <-dispatches:
+		if action != "espansr" {
+			t.Errorf("dispatched = %q, want %q", action, "espansr")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for dispatch after Trigger")
+	}
+}
+
+func TestEngine_TriggerAfterStop(t *testing.T) {
+	listener := newTestListener()
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 1000,
+		OnAction:       func(string) {},
+		Logger:         testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	e.Stop()
+
+	// Trigger should return an error after stop.
+	if err := e.Trigger(); err == nil {
+		t.Error("Trigger after Stop should return error")
+	}
+}

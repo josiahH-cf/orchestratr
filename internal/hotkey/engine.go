@@ -186,6 +186,21 @@ func (e *Engine) Stop() error {
 	return err
 }
 
+// Trigger simulates a leader key press via the API. This puts the
+// engine into ChordWait state as if the physical leader key were
+// pressed. It is used by the Wayland manual fallback (orchestratr
+// trigger) and can also be used for testing.
+func (e *Engine) Trigger() error {
+	select {
+	case <-e.stopCh:
+		return fmt.Errorf("engine is stopped")
+	default:
+	}
+
+	e.events <- KeyEvent{Key: e.leader, Pressed: true}
+	return nil
+}
+
 // loop is the main event processing goroutine.
 func (e *Engine) loop() {
 	defer close(e.done)

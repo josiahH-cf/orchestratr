@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/josiahH-cf/orchestratr/internal/api"
 	"github.com/josiahH-cf/orchestratr/internal/daemon"
+	"github.com/josiahH-cf/orchestratr/internal/hotkey"
 	"github.com/josiahH-cf/orchestratr/internal/registry"
 )
 
@@ -28,7 +30,7 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		fmt.Fprintln(stdout, "orchestratr — system-wide app launcher")
-		fmt.Fprintln(stdout, "Usage: orchestratr [start|stop|status|reload|list|version]")
+		fmt.Fprintln(stdout, "Usage: orchestratr [start|stop|status|reload|list|trigger|version]")
 		return nil
 	}
 
@@ -48,6 +50,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	case "status":
 		return runStatus(stdout, stderr)
+
+	case "trigger":
+		return runTrigger(stdout, stderr)
 
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
@@ -136,6 +141,38 @@ func runStart(stdout, stderr io.Writer) error {
 		APIPort:  actualPort,
 	})
 	d.SetLogger(logger)
+
+	// Build and start the hotkey engine.
+	var hotkeyEngine *hotkey.Engine
+	if cfg != nil {
+		chords := buildChords(cfg.Apps)
+		listener := hotkey.NewPlatformListener()
+		engine, engineErr := hotkey.NewEngine(hotkey.EngineConfig{
+			LeaderKey:      cfg.LeaderKey,
+			ChordTimeoutMs: cfg.ChordTimeoutMs,
+			Chords:         chords,
+			OnAction: func(action string) {
+				logger.Printf("chord dispatched: %s", action)
+				// TODO: integrate with launcher to actually launch apps
+			},
+			Logger: logger,
+		}, listener)
+		if engineErr != nil {
+			logger.Printf("warning: hotkey engine not available: %v", engineErr)
+		} else {
+			if startErr := engine.Start(); startErr != nil {
+				logger.Printf("warning: hotkey engine failed to start: %v", startErr)
+			} else {
+				hotkeyEngine = engine
+				defer hotkeyEngine.Stop()
+
+				// Wire the trigger API endpoint to the engine.
+				apiSrv.SetTriggerFunc(func() error {
+					return hotkeyEngine.Trigger()
+				})
+			}
+		}
+	}
 
 	fmt.Fprintf(stdout, "orchestratr daemon starting on port %d\n", actualPort)
 	logger.Printf("PID %d, API port %d", os.Getpid(), actualPort)
@@ -241,4 +278,66 @@ func runList(stdout, stderr io.Writer) error {
 	return w.Flush()
 }
 
+// buildChords converts registry app entries into hotkey.Chord values.
+// Entries with empty chords are skipped. Invalid chord strings are
+// logged as warnings and skipped.
+func buildChords(apps []registry.AppEntry) []hotkey.Chord {
+	var chords []hotkey.Chord
+	for _, app := range apps {
+		if app.Chord == "" {
+			continue
+		}
+		k, err := hotkey.ParseKey(app.Chord)
+		if err != nil {
+			// Log but don't fail — one bad chord shouldn't prevent startup.
+			log.Printf("warning: skipping app %q: invalid chord %q: %v", app.Name, app.Chord, err)
+			continue
+		}
+		chords = append(chords, hotkey.Chord{Key: k, Action: app.Name})
+	}
+	return chords
+}
 
+// runTrigger sends a trigger request to the running daemon's API,
+// simulating a leader key press. This is the Wayland manual fallback:
+// users configure their compositor to run "orchestratr trigger" as a
+// custom keybinding.
+func runTrigger(stdout, stderr io.Writer) error {
+	port, err := readPort()
+	if err != nil {
+		return fmt.Errorf("daemon is not running: %w", err)
+	}
+
+	url := fmt.Sprintf("http://127.0.0.1:%d/trigger", port)
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		return fmt.Errorf("sending trigger: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		fmt.Fprintln(stdout, "leader key triggered")
+		return nil
+	}
+
+	var errResp struct {
+		Error string `json:"error"`
+	}
+	if decErr := json.NewDecoder(resp.Body).Decode(&errResp); decErr == nil && errResp.Error != "" {
+		return fmt.Errorf("trigger failed: %s", errResp.Error)
+	}
+	return fmt.Errorf("trigger failed: HTTP %d", resp.StatusCode)
+}
+
+// readPort reads the daemon port from the port discovery file.
+func readPort() (int, error) {
+	portPath := daemon.DefaultPortFilePath()
+	if p := os.Getenv("ORCHESTRATR_PORT_PATH"); p != "" {
+		portPath = p
+	}
+	data, err := os.ReadFile(portPath)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(data)))
+}

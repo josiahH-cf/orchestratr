@@ -17,17 +17,23 @@ import (
 // reload the config and return an error if the reload failed.
 type ReloadFunc func() (*registry.Config, error)
 
+// TriggerFunc is called when POST /trigger is received, simulating
+// a leader key press. This enables the Wayland manual keybinding
+// fallback (orchestratr trigger).
+type TriggerFunc func() error
+
 // maxRequestBody is the maximum allowed request body size (1 MB).
 const maxRequestBody = 1 << 20
 
 // Server is the localhost HTTP API server for orchestratr.
 type Server struct {
-	port     int
-	version  string
-	reg      *registry.Registry
-	reloadFn ReloadFunc
-	state    *StateTracker
-	logger   *log.Logger
+	port      int
+	version   string
+	reg       *registry.Registry
+	reloadFn  ReloadFunc
+	triggerFn TriggerFunc
+	state     *StateTracker
+	logger    *log.Logger
 
 	mu     sync.Mutex
 	server *http.Server
@@ -57,6 +63,13 @@ func (s *Server) SetLogger(l *log.Logger) {
 	s.logger = l
 }
 
+// SetTriggerFunc sets the function called when POST /trigger is received.
+func (s *Server) SetTriggerFunc(fn TriggerFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.triggerFn = fn
+}
+
 // Handler returns the HTTP handler with all routes and middleware.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -65,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/apps", s.handleApps)
 	mux.HandleFunc("/apps/", s.handleAppAction)
 	mux.HandleFunc("/reload", s.handleReload)
+	mux.HandleFunc("/trigger", s.handleTrigger)
 
 	// Catch-all for unknown routes.
 	mux.HandleFunc("/", s.handleNotFound)
@@ -296,6 +310,29 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 		"apps":   cfg.Apps,
 	})
+}
+
+// handleTrigger simulates a leader key press via the API. This is
+// used by the Wayland manual keybinding fallback.
+func (s *Server) handleTrigger(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	s.mu.Lock()
+	fn := s.triggerFn
+	s.mu.Unlock()
+
+	if fn == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "hotkey engine not running")
+		return
+	}
+	if err := fn(); err != nil {
+		writeError(w, http.StatusInternalServerError, "trigger_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // handleNotFound is the catch-all handler for unknown routes.
