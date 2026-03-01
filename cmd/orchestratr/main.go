@@ -38,7 +38,7 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		fmt.Fprintln(stdout, "orchestratr — system-wide app launcher")
-		fmt.Fprintln(stdout, "Usage: orchestratr [start|stop|status|reload|list|trigger|configure|version]")
+		fmt.Fprintln(stdout, "Usage: orchestratr [start|stop|status|reload|list|trigger|configure|install|uninstall|version]")
 		return nil
 	}
 
@@ -67,6 +67,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	case "configure":
 		return runConfigure(stdout, stderr)
+
+	case "install":
+		return runInstall(stdout, stderr)
+
+	case "uninstall":
+		return runUninstall(stdout, stderr)
 
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
