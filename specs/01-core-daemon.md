@@ -1,7 +1,8 @@
 # Feature: Core Daemon & System Tray
 
-**Status:** Not started  
-**Project:** orchestratr
+**Status:** In progress  
+**Project:** orchestratr  
+**Language:** Go
 
 ## Description
 
@@ -11,8 +12,8 @@ orchestratr runs as a lightweight background daemon with a system tray presence.
 
 - [ ] Daemon starts as a background process with no visible window
 - [ ] System tray icon appears with a context menu (Configure, Pause, Quit)
-- [ ] Leader key (Ctrl+Space) activates a "listening" state with a brief visual indicator (e.g., tray icon change or small overlay)
-- [ ] If no chord key is pressed within a configurable timeout (default: 2s), listening state cancels silently
+- [ ] Leader key (Ctrl+Space) activates a "listening" state with a brief visual indicator (deferred to `02-hotkey-engine`)
+- [ ] If no chord key is pressed within a configurable timeout (default: 2s), listening state cancels silently (deferred to `02-hotkey-engine`)
 - [ ] Daemon logs startup, shutdown, and hotkey events to a rotating log file
 - [ ] Daemon exposes a localhost HTTP health endpoint (`GET /health`) returning `{"status": "ok"}`
 - [ ] Daemon gracefully shuts down on SIGTERM / tray Quit, releasing all hotkey registrations
@@ -22,10 +23,12 @@ orchestratr runs as a lightweight background daemon with a system tray presence.
 
 | Area | Files |
 |------|-------|
-| **Create** | `orchestratr/daemon.py` — main event loop, signal handling, lifecycle |
-| **Create** | `orchestratr/tray.py` — system tray icon, context menu |
-| **Create** | `orchestratr/config.py` — configuration loading, defaults |
-| **Create** | `orchestratr/__main__.py` — CLI entry point (`orchestratr start`, `orchestratr stop`, `orchestratr status`) |
+| **Create** | `internal/daemon/daemon.go` — daemon struct, lifecycle (Start/Stop/Pause), signal handling |
+| **Create** | `internal/daemon/lock.go` — PID-based single-instance lock |
+| **Create** | `internal/daemon/log.go` — rotating log file setup |
+| **Create** | `internal/daemon/health.go` — minimal localhost HTTP server with `/health` |
+| **Create** | `internal/tray/tray.go` — tray Provider interface + headless stub |
+| **Modify** | `cmd/orchestratr/main.go` — CLI commands: start, stop, status |
 
 ## Constraints
 
