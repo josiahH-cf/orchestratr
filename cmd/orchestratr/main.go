@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -47,7 +48,7 @@ func runList(stdout, stderr io.Writer) error {
 
 	cfg, err := registry.LoadAndValidate(path)
 	if err != nil {
-		if os.IsNotExist(unwrapPathError(err)) {
+		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("config not found at %s\nRun orchestratr once to generate a default config, or set ORCHESTRATR_CONFIG", path)
 		}
 		return fmt.Errorf("loading config: %w", err)
@@ -72,14 +73,4 @@ func runList(stdout, stderr io.Writer) error {
 	return w.Flush()
 }
 
-// unwrapPathError extracts the underlying error from wrapped errors
-// to check for os.IsNotExist.
-func unwrapPathError(err error) error {
-	for {
-		u, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return err
-		}
-		err = u.Unwrap()
-	}
-}
+

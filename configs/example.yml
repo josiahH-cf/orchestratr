@@ -1,11 +1,14 @@
 # orchestratr configuration
 leader_key: "ctrl+space"
+chord_timeout_ms: 2000
 api_port: 9876
+log_level: info
 
 apps:
   - name: espansr
     description: "Espanso template manager"
     chord: "e"
     command: "espansr gui"
+    environment: wsl
     ready_cmd: "espansr status --json"
     ready_timeout_ms: 3000

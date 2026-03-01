@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -77,13 +78,13 @@ func (w *Watcher) Start(ctx context.Context) error {
 	fsw, err := fsnotify.NewWatcher()
 	if err != nil {
 		w.mu.Unlock()
-		return err
+		return fmt.Errorf("creating file watcher: %w", err)
 	}
 
 	if err := fsw.Add(w.path); err != nil {
 		fsw.Close()
 		w.mu.Unlock()
-		return err
+		return fmt.Errorf("watching %s: %w", w.path, err)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

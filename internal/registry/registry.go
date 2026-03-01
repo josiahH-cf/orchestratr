@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -48,7 +49,7 @@ func (r *Registry) FindByChord(chord string) (AppEntry, bool) {
 	defer r.mu.RUnlock()
 
 	for _, app := range r.cfg.Apps {
-		if equalFold(app.Chord, chord) {
+		if strings.EqualFold(app.Chord, chord) {
 			return app, true
 		}
 	}
@@ -62,7 +63,7 @@ func (r *Registry) FindByName(name string) (AppEntry, bool) {
 	defer r.mu.RUnlock()
 
 	for _, app := range r.cfg.Apps {
-		if equalFold(app.Name, name) {
+		if strings.EqualFold(app.Name, name) {
 			return app, true
 		}
 	}
@@ -82,26 +83,6 @@ func (r *Registry) Len() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.cfg.Apps)
-}
-
-// equalFold is a helper for case-insensitive string comparison.
-func equalFold(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range len(a) {
-		ca, cb := a[i], b[i]
-		if ca >= 'A' && ca <= 'Z' {
-			ca += 'a' - 'A'
-		}
-		if cb >= 'A' && cb <= 'Z' {
-			cb += 'a' - 'A'
-		}
-		if ca != cb {
-			return false
-		}
-	}
-	return true
 }
 
 // String returns a human-readable summary of the registry.

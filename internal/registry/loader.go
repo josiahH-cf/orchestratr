@@ -39,7 +39,7 @@ func LoadAndValidate(path string) (*Config, error) {
 		for _, e := range errs {
 			msg += "\n  - " + e.Error()
 		}
-		return cfg, fmt.Errorf("%s", msg)
+		return nil, fmt.Errorf("%s", msg)
 	}
 
 	return cfg, nil
@@ -85,6 +85,8 @@ func EnsureDefaults(path string) (string, error) {
 	if _, err := os.Stat(path); err == nil {
 		// File already exists; nothing to do.
 		return path, nil
+	} else if !os.IsNotExist(err) {
+		return path, fmt.Errorf("checking config file: %w", err)
 	}
 
 	cfg := DefaultConfig()

@@ -24,7 +24,7 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
-func TestConfigYAMLRoundTrip(t *testing.T) {
+func TestAppEntryOptionalFields(t *testing.T) {
 	// Verify YAML tags are correct by marshaling and unmarshaling.
 	// This is tested more thoroughly in loader_test.go; here we just
 	// verify the struct tags exist.
