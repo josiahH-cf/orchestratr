@@ -42,7 +42,7 @@ check_prereqs() {
     fi
 
     local go_version
-    go_version=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+')
+    go_version=$(go version | sed 's/.*go\([0-9]*\.[0-9]*\).*/\1/')
     info "Found Go ${go_version}"
 }
 

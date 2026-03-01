@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/josiahH-cf/orchestratr/internal/autostart"
 	"github.com/josiahH-cf/orchestratr/internal/hotkey"
@@ -39,30 +40,10 @@ func isWSL2() bool {
 		if err != nil {
 			return false
 		}
-		return containsWSL2Markers(string(data))
+		lower := strings.ToLower(string(data))
+		return strings.Contains(lower, "microsoft") || strings.Contains(lower, "wsl2")
 	}
 	return platform.IsWSL2()
-}
-
-// containsWSL2Markers checks if a string contains WSL2/Microsoft markers.
-func containsWSL2Markers(s string) bool {
-	lower := make([]byte, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 32
-		}
-		lower[i] = c
-	}
-	ls := string(lower)
-	for _, marker := range []string{"microsoft", "wsl2"} {
-		for i := 0; i <= len(ls)-len(marker); i++ {
-			if ls[i:i+len(marker)] == marker {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // runInstall configures autostart, verifies hotkey registration,
@@ -102,7 +83,7 @@ func runInstall(stdout, stderr io.Writer) error {
 
 	// Verify hotkey registration if config is loaded.
 	if cfg != nil && cfg.LeaderKey != "" {
-		verifyHotkeyRegistration(stdout, stderr, cfg.LeaderKey)
+		verifyHotkeyRegistration(stderr, cfg.LeaderKey)
 	}
 
 	// Get binary path for autostart.
@@ -121,16 +102,12 @@ func runInstall(stdout, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "  autostart: %s\n", mgr.Description())
 	fmt.Fprintf(stdout, "  config: %s\n", cfgPath)
 
-	if mgr.IsInstalled() {
-		fmt.Fprintf(stdout, "  autostart configured — orchestratr will start at login\n")
-	}
-
 	return nil
 }
 
 // verifyHotkeyRegistration attempts to register the leader key and
 // reports any issues.
-func verifyHotkeyRegistration(stdout, stderr io.Writer, leaderKey string) {
+func verifyHotkeyRegistration(stderr io.Writer, leaderKey string) {
 	key, err := hotkey.ParseKey(leaderKey)
 	if err != nil {
 		fmt.Fprintf(stderr, "warning: leader key %q is invalid: %v\n", leaderKey, err)

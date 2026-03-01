@@ -30,18 +30,24 @@ type LinuxManager struct {
 }
 
 // servicePath returns the full path to the systemd user service file.
-func (m *LinuxManager) servicePath() string {
+func (m *LinuxManager) servicePath() (string, error) {
 	base := m.ConfigDir
 	if base == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("detecting home directory: %w", err)
+		}
 		base = filepath.Join(home, ".config")
 	}
-	return filepath.Join(base, "systemd", "user", serviceName)
+	return filepath.Join(base, "systemd", "user", serviceName), nil
 }
 
 // Install creates or updates the systemd user service file.
 func (m *LinuxManager) Install(binaryPath string) error {
-	path := m.servicePath()
+	path, err := m.servicePath()
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating systemd user dir: %w", err)
@@ -71,7 +77,11 @@ func (m *LinuxManager) Uninstall() error {
 	if !m.IsInstalled() {
 		return ErrNotInstalled
 	}
-	if err := os.Remove(m.servicePath()); err != nil {
+	path, err := m.servicePath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("removing service file: %w", err)
 	}
 	return nil
@@ -79,11 +89,19 @@ func (m *LinuxManager) Uninstall() error {
 
 // IsInstalled reports whether the systemd user service file exists.
 func (m *LinuxManager) IsInstalled() bool {
-	_, err := os.Stat(m.servicePath())
-	return err == nil
+	path, err := m.servicePath()
+	if err != nil {
+		return false
+	}
+	_, statErr := os.Stat(path)
+	return statErr == nil
 }
 
 // Description returns a human-readable description of the autostart method.
 func (m *LinuxManager) Description() string {
-	return fmt.Sprintf("systemd user service at %s", m.servicePath())
+	path, err := m.servicePath()
+	if err != nil {
+		return "systemd user service (path unknown)"
+	}
+	return fmt.Sprintf("systemd user service at %s", path)
 }

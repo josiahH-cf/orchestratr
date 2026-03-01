@@ -37,22 +37,25 @@ type DarwinManager struct {
 }
 
 // plistPath returns the full path to the Launch Agent plist file.
-func (m *DarwinManager) plistPath() string {
+func (m *DarwinManager) plistPath() (string, error) {
 	base := m.LaunchAgentsDir
 	if base == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("detecting home directory: %w", err)
+		}
 		base = filepath.Join(home, "Library", "LaunchAgents")
 	}
-	return filepath.Join(base, plistName)
+	return filepath.Join(base, plistName), nil
 }
 
 // Install creates or updates the Launch Agent plist file.
 func (m *DarwinManager) Install(binaryPath string) error {
-	dir := m.LaunchAgentsDir
-	if dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, "Library", "LaunchAgents")
+	path, err := m.plistPath()
+	if err != nil {
+		return err
 	}
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating LaunchAgents dir: %w", err)
 	}
@@ -62,7 +65,7 @@ func (m *DarwinManager) Install(binaryPath string) error {
 		return fmt.Errorf("parsing plist template: %w", err)
 	}
 
-	f, err := os.Create(m.plistPath())
+	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("creating plist file: %w", err)
 	}
@@ -81,7 +84,11 @@ func (m *DarwinManager) Uninstall() error {
 	if !m.IsInstalled() {
 		return ErrNotInstalled
 	}
-	if err := os.Remove(m.plistPath()); err != nil {
+	path, err := m.plistPath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("removing plist file: %w", err)
 	}
 	return nil
@@ -89,11 +96,19 @@ func (m *DarwinManager) Uninstall() error {
 
 // IsInstalled reports whether the Launch Agent plist file exists.
 func (m *DarwinManager) IsInstalled() bool {
-	_, err := os.Stat(m.plistPath())
-	return err == nil
+	path, err := m.plistPath()
+	if err != nil {
+		return false
+	}
+	_, statErr := os.Stat(path)
+	return statErr == nil
 }
 
 // Description returns a human-readable description of the autostart method.
 func (m *DarwinManager) Description() string {
-	return fmt.Sprintf("macOS Launch Agent at %s", m.plistPath())
+	path, err := m.plistPath()
+	if err != nil {
+		return "macOS Launch Agent (path unknown)"
+	}
+	return fmt.Sprintf("macOS Launch Agent at %s", path)
 }

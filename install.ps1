@@ -54,7 +54,7 @@ function Install-Binary {
         return
     }
 
-    $scriptDir = Split-Path -Parent $MyInvocation.ScriptName
+    $scriptDir = $PSScriptRoot
     $goMod = Join-Path $scriptDir "go.mod"
 
     if (Test-Path $goMod) {
