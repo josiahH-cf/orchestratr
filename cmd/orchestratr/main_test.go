@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -188,5 +189,54 @@ apps:
 
 	if !strings.Contains(stdout.String(), "native") {
 		t.Errorf("output = %q, want default 'native' environment", stdout.String())
+	}
+}
+
+func TestRun_StatusNotRunning(t *testing.T) {
+	// Point lock path to a temp dir so no PID file exists.
+	dir := t.TempDir()
+	t.Setenv("ORCHESTRATR_LOCK_PATH", filepath.Join(dir, "orchestratr.pid"))
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"status"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run(status) error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "not running") {
+		t.Errorf("output = %q, want 'not running'", stdout.String())
+	}
+}
+
+func TestRun_StopNotRunning(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ORCHESTRATR_LOCK_PATH", filepath.Join(dir, "orchestratr.pid"))
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"stop"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("run(stop) should error when daemon is not running")
+	}
+	if !strings.Contains(err.Error(), "not running") {
+		t.Errorf("error = %q, want 'not running'", err.Error())
+	}
+}
+
+func TestRun_StartRejectsDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "orchestratr.pid")
+	t.Setenv("ORCHESTRATR_LOCK_PATH", lockPath)
+
+	// Write our own PID to simulate a running daemon.
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"start"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("run(start) should error when another instance is running")
+	}
+	if !strings.Contains(err.Error(), "another instance") {
+		t.Errorf("error = %q, want 'another instance'", err.Error())
 	}
 }
