@@ -10,7 +10,7 @@ The app registry is the central data store mapping chord keys to applications. I
 ## Acceptance Criteria
 
 - [ ] Configuration is stored in a single YAML file at the platform-appropriate config directory (e.g., `~/.config/orchestratr/config.yml`, `%APPDATA%/orchestratr/config.yml`)
-- [ ] Each app entry has: `name`, `chord` (single key), `command` (shell string), `environment` (native/wsl), and optional `description`
+- [ ] Each app entry has: `name`, `chord` (single key), `command` (shell string), `environment` (native/wsl), and optional `description`, `ready_cmd`, `ready_timeout_ms`
 - [ ] Duplicate chord assignments are rejected with a clear error message at load time
 - [ ] Config changes are detected and hot-reloaded without restarting the daemon (file watcher or explicit reload via tray menu)
 - [ ] A `orchestratr list` CLI command prints the current app registry in a readable table
@@ -21,9 +21,12 @@ The app registry is the central data store mapping chord keys to applications. I
 
 | Area | Files |
 |------|-------|
-| **Create** | `orchestratr/registry.py` — app registry data model, load/save/validate |
-| **Create** | `orchestratr/watcher.py` — file watcher for config hot-reload |
-| **Modify** | `orchestratr/config.py` — integrate registry into global config |
+| **Create** | `internal/registry/config.go` — config and app entry structs, YAML tags |
+| **Create** | `internal/registry/validate.go` — validation: required fields, duplicates, reserved chords |
+| **Create** | `internal/registry/registry.go` — thread-safe registry with query methods |
+| **Create** | `internal/registry/loader.go` — file I/O, platform paths, default generation |
+| **Create** | `internal/registry/watcher.go` — fsnotify-based file watcher for hot-reload |
+| **Modify** | `cmd/orchestratr/main.go` — add `list` subcommand |
 
 ## Constraints
 
@@ -50,10 +53,10 @@ The app registry is the central data store mapping chord keys to applications. I
 
 ```yaml
 # ~/.config/orchestratr/config.yml
-orchestratr:
-  leader_key: "ctrl+space"
-  chord_timeout_ms: 2000
-  log_level: info
+leader_key: "ctrl+space"
+chord_timeout_ms: 2000
+api_port: 9876
+log_level: info
 
 apps:
   - name: espansr
@@ -61,6 +64,8 @@ apps:
     command: "/home/josiah/R/espansr/.venv/bin/espansr gui"
     environment: wsl
     description: "Espanso template manager"
+    ready_cmd: "espansr status --json"
+    ready_timeout_ms: 3000
 
   - name: another-app
     chord: a
