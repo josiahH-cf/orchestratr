@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -354,6 +355,11 @@ func runStart(stdout, stderr io.Writer, foreground bool) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Track the GUI server instance so it can be stopped on shutdown
+	// or when a new configure request arrives (OI-10).
+	var guiSrv *gui.Server
+	var guiMu sync.Mutex
+
 	trayProvider.OnPause(func() {
 		if err := d.Pause(); err != nil {
 			logger.Printf("pause failed: %v", err)
@@ -380,16 +386,33 @@ func runStart(stdout, stderr io.Writer, foreground bool) error {
 	})
 	trayProvider.OnConfigure(func() {
 		logger.Println("configure requested via tray")
-		guiSrv := gui.NewServer(cfgPath, actualPort, logger)
-		if guiErr := guiSrv.Start(); guiErr != nil {
+
+		guiMu.Lock()
+		// Stop the previous GUI server if still running.
+		if guiSrv != nil {
+			guiSrv.Stop()
+		}
+		guiSrv = gui.NewServer(cfgPath, actualPort, logger)
+		srv := guiSrv
+		guiMu.Unlock()
+
+		if guiErr := srv.Start(); guiErr != nil {
 			logger.Printf("gui server start failed: %v", guiErr)
 			return
 		}
-		logger.Printf("management GUI listening on %s", guiSrv.URL())
-		if openErr := guiSrv.OpenBrowser(); openErr != nil {
-			logger.Printf("could not open browser: %v — visit %s", openErr, guiSrv.URL())
+		logger.Printf("management GUI listening on %s", srv.URL())
+		if openErr := srv.OpenBrowser(); openErr != nil {
+			logger.Printf("could not open browser: %v — visit %s", openErr, srv.URL())
 		}
 	})
+	// Stop any running GUI server on daemon shutdown.
+	defer func() {
+		guiMu.Lock()
+		if guiSrv != nil {
+			guiSrv.Stop()
+		}
+		guiMu.Unlock()
+	}()
 	_ = trayProvider.SetState("running")
 
 	// Start file watcher for config hot-reload.

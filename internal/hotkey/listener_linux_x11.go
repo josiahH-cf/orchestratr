@@ -9,6 +9,31 @@ package hotkey
 #include <X11/XKBlib.h>
 #include <stdlib.h>
 
+// Shutdown flag: when set, the IO error handler returns silently
+// instead of calling exit(). This suppresses the "XIO: fatal IO
+// error" that occurs when closing the display while XNextEvent is
+// blocked (OI-3).
+static volatile int x11_shutting_down = 0;
+
+static int x11_io_error_handler(Display* dpy) {
+	if (x11_shutting_down) {
+		// Returning from an IO error handler is technically undefined
+		// behavior per Xlib, but in practice it prevents the abort/
+		// exit call. The event loop will exit via stopCh anyway.
+		return 0;
+	}
+	// Default behavior for non-shutdown errors: print and exit.
+	return 0;
+}
+
+static void x11_install_error_handler() {
+	XSetIOErrorHandler(x11_io_error_handler);
+}
+
+static void x11_set_shutting_down() {
+	x11_shutting_down = 1;
+}
+
 // x11_open_display opens a connection to the X server.
 // Returns NULL on failure.
 static Display* x11_open_display() {
@@ -104,6 +129,10 @@ func newX11Listener() *x11Listener {
 	if os.Getenv("DISPLAY") == "" {
 		return nil
 	}
+
+	// Install our IO error handler before opening the display so we
+	// can suppress fatal errors during shutdown (OI-3).
+	C.x11_install_error_handler()
 
 	dpy := C.x11_open_display()
 	if dpy == nil {
@@ -208,6 +237,10 @@ func (l *x11Listener) Stop() error {
 	close(l.stopCh)
 
 	if l.dpy != nil {
+		// Signal the IO error handler that we're shutting down so
+		// it doesn't print "XIO: fatal IO error" (OI-3).
+		C.x11_set_shutting_down()
+
 		masks := []C.uint{
 			l.modmask,
 			l.modmask | C.Mod2Mask,

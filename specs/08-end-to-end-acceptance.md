@@ -230,7 +230,7 @@ either accept a chord or the help text should be corrected.
 - [ ] `./orchestratr status` shows "running" with PID and port
 - [ ] `curl http://127.0.0.1:9876/health` returns `{"status":"ok","version":"..."}`
 - [ ] Port discovery file exists at `~/.config/orchestratr/port`
-- [ ] Log file created at `~/.local/share/orchestratr/orchestratr.log`
+- [ ] Log file created at `~/.config/orchestratr/orchestratr.log`
 - [ ] `./orchestratr stop` shuts down the daemon gracefully
 - [ ] `./orchestratr status` shows "not running" after stop
 - [ ] Second `./orchestratr start` does not conflict (lock released on stop)
