@@ -22,6 +22,12 @@ type ReloadFunc func() (*registry.Config, error)
 // fallback (orchestratr trigger).
 type TriggerFunc func() error
 
+// LaunchFunc is called when POST /apps/{name}/launch is received.
+// It launches (or focuses) the named app and returns the PID on
+// success. This enables launching apps without the hotkey engine
+// (e.g., on WSL, Wayland, or via CLI).
+type LaunchFunc func(name string) (pid int, err error)
+
 // maxRequestBody is the maximum allowed request body size (1 MB).
 const maxRequestBody = 1 << 20
 
@@ -32,6 +38,7 @@ type Server struct {
 	reg       *registry.Registry
 	reloadFn  ReloadFunc
 	triggerFn TriggerFunc
+	launchFn  LaunchFunc
 	state     *StateTracker
 	logger    *log.Logger
 
@@ -68,6 +75,15 @@ func (s *Server) SetTriggerFunc(fn TriggerFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.triggerFn = fn
+}
+
+// SetLaunchFunc sets the function called when POST /apps/{name}/launch
+// is received. This allows launching apps directly without the hotkey
+// engine.
+func (s *Server) SetLaunchFunc(fn LaunchFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.launchFn = fn
 }
 
 // State returns the server's StateTracker for external callers that
@@ -295,6 +311,12 @@ func (s *Server) handleAppAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleState(w, r, name)
+	case "launch":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.handleLaunch(w, r, name)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("unknown action %q", action))
 	}
@@ -325,6 +347,24 @@ func (s *Server) handleState(w http.ResponseWriter, _ *http.Request, name string
 		appState = &AppState{Name: name}
 	}
 	writeJSON(w, http.StatusOK, appState)
+}
+
+// handleLaunch launches or focuses the named app.
+func (s *Server) handleLaunch(w http.ResponseWriter, _ *http.Request, name string) {
+	s.mu.Lock()
+	fn := s.launchFn
+	s.mu.Unlock()
+
+	if fn == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "launcher not configured")
+		return
+	}
+	pid, err := fn(name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "launch_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "app": name, "pid": pid})
 }
 
 // handleReload triggers a config hot-reload.

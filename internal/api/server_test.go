@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/josiahH-cf/orchestratr/internal/registry"
 )
 
 func TestNewServer(t *testing.T) {
@@ -379,5 +381,103 @@ func TestTrigger_MethodNotAllowed(t *testing.T) {
 	}
 	if w.Header().Get("Allow") != http.MethodPost {
 		t.Errorf("Allow = %q, want %q", w.Header().Get("Allow"), http.MethodPost)
+	}
+}
+
+func TestLaunch_NoHandler(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{{Name: "testapp", Chord: "t", Command: "echo hi"}},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "test", reg, nil)
+	handler := s.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/apps/testapp/launch", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestLaunch_Success(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{{Name: "testapp", Chord: "t", Command: "echo hi"}},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "test", reg, nil)
+
+	called := false
+	s.SetLaunchFunc(func(name string) (int, error) {
+		called = true
+		if name != "testapp" {
+			t.Errorf("launch name = %q, want %q", name, "testapp")
+		}
+		return 12345, nil
+	})
+
+	handler := s.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/apps/testapp/launch", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if !called {
+		t.Error("launch func was not called")
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if resp["status"] != "ok" {
+		t.Errorf("status = %q, want %q", resp["status"], "ok")
+	}
+	if pid, ok := resp["pid"].(float64); !ok || pid != 12345 {
+		t.Errorf("pid = %v, want 12345", resp["pid"])
+	}
+}
+
+func TestLaunch_AppNotFound(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{{Name: "testapp", Chord: "t", Command: "echo hi"}},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "test", reg, nil)
+	s.SetLaunchFunc(func(name string) (int, error) {
+		return 0, nil
+	})
+	handler := s.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/apps/nonexistent/launch", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestLaunch_MethodNotAllowed(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{{Name: "testapp", Chord: "t", Command: "echo hi"}},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "test", reg, nil)
+	handler := s.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/apps/testapp/launch", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
 	}
 }

@@ -38,7 +38,7 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		fmt.Fprintln(stdout, "orchestratr — system-wide app launcher")
-		fmt.Fprintln(stdout, "Usage: orchestratr [start|stop|status|reload|list|trigger|configure|install|uninstall|version]")
+		fmt.Fprintln(stdout, "Usage: orchestratr [start|stop|status|reload|list|launch|trigger|configure|install|uninstall|version]")
 		return nil
 	}
 
@@ -61,6 +61,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	case "trigger":
 		return runTrigger(stdout, stderr)
+
+	case "launch":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: orchestratr launch <app-name>")
+		}
+		return runLaunch(args[1], stdout, stderr)
 
 	case "reload":
 		return runReload(stdout, stderr)
@@ -245,6 +251,37 @@ func runStart(stdout, stderr io.Writer) error {
 			}
 		}
 	}
+
+	// Wire the launch API endpoint to the launcher (works even without
+	// the hotkey engine, enabling WSL/Wayland/CLI app launching).
+	apiSrv.SetLaunchFunc(func(name string) (int, error) {
+		if reg == nil {
+			return 0, fmt.Errorf("registry not loaded")
+		}
+		app, found := reg.FindByName(name)
+		if !found {
+			return 0, fmt.Errorf("app %q not found", name)
+		}
+		if exec.IsRunning(name) {
+			pid, _ := exec.PID(name)
+			if focusErr := launcher.FocusWindow(pid); focusErr != nil {
+				logger.Printf("focus %q (PID %d) failed: %v", name, pid, focusErr)
+			} else {
+				logger.Printf("focused %q (PID %d)", name, pid)
+			}
+			return pid, nil
+		}
+		result, launchErr := exec.Launch(app)
+		if launchErr != nil {
+			if trayProvider != nil {
+				trayProvider.NotifyError("Launch Failed", fmt.Sprintf("%s: %v", name, launchErr))
+			}
+			return 0, launchErr
+		}
+		logger.Printf("launched %q (PID %d)", name, result.PID)
+		apiSrv.State().SetLaunched(name)
+		return result.PID, nil
+	})
 
 	// Wire tray callbacks now that daemon and engine are initialized.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -560,6 +597,43 @@ func runTrigger(stdout, stderr io.Writer) error {
 		return fmt.Errorf("trigger failed: %s", errResp.Error)
 	}
 	return fmt.Errorf("trigger failed: HTTP %d", resp.StatusCode)
+}
+
+// runLaunch sends a launch request for a specific app to the running
+// daemon's API. This enables launching apps by name without the hotkey
+// engine (useful on WSL, Wayland, or for scripting).
+func runLaunch(name string, stdout, stderr io.Writer) error {
+	port, err := readPort()
+	if err != nil {
+		return fmt.Errorf("daemon is not running: %w", err)
+	}
+
+	url := fmt.Sprintf("http://127.0.0.1:%d/apps/%s/launch", port, name)
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		return fmt.Errorf("launching %q: %w", name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var result struct {
+			PID int `json:"pid"`
+		}
+		if decErr := json.NewDecoder(resp.Body).Decode(&result); decErr == nil && result.PID > 0 {
+			fmt.Fprintf(stdout, "launched %s (PID %d)\n", name, result.PID)
+		} else {
+			fmt.Fprintf(stdout, "launched %s\n", name)
+		}
+		return nil
+	}
+
+	var errResp struct {
+		Error string `json:"error"`
+	}
+	if decErr := json.NewDecoder(resp.Body).Decode(&errResp); decErr == nil && errResp.Error != "" {
+		return fmt.Errorf("launch %q failed: %s", name, errResp.Error)
+	}
+	return fmt.Errorf("launch %q failed: HTTP %d", name, resp.StatusCode)
 }
 
 // runReload sends a reload request to the running daemon's API.
