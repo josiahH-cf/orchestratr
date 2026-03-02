@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 
@@ -84,6 +85,15 @@ func runInstall(stdout, stderr io.Writer) error {
 	// Verify hotkey registration if config is loaded.
 	if cfg != nil && cfg.LeaderKey != "" {
 		verifyHotkeyRegistration(stderr, cfg.LeaderKey)
+	}
+
+	// Check for xdotool on Linux (OI-6). Without it, bring-to-front
+	// focus will not work on X11.
+	if runtime.GOOS == "linux" {
+		if _, lookErr := exec.LookPath("xdotool"); lookErr != nil {
+			fmt.Fprintln(stderr, "warning: xdotool not found — bring-to-front will be disabled")
+			fmt.Fprintln(stderr, "  install with: sudo apt install xdotool")
+		}
 	}
 
 	// Get binary path for autostart.

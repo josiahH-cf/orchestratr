@@ -344,3 +344,34 @@ apps:
 		t.Errorf("Apps[1].Environment = %q, want %q (should be preserved)", cfg.Apps[1].Environment, "wsl")
 	}
 }
+
+func TestLoad_DetachedField(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+
+	content := `
+apps:
+  - name: normal
+    chord: n
+    command: "echo normal"
+  - name: uwp
+    chord: u
+    command: "calc.exe"
+    detached: true
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Apps[0].Detached {
+		t.Error("Apps[0].Detached = true, want false (default)")
+	}
+	if !cfg.Apps[1].Detached {
+		t.Error("Apps[1].Detached = false, want true")
+	}
+}

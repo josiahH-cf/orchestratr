@@ -53,6 +53,8 @@ func NewNativeExecutor(opts ...Option) *NativeExecutor {
 
 // Launch starts the app described by entry. It returns
 // ErrAlreadyRunning if the app already has a tracked process.
+// When entry.Detached is true, the process is started but not
+// tracked — no exit callback will fire (OI-5).
 func (e *NativeExecutor) Launch(entry registry.AppEntry) (*Result, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -78,6 +80,14 @@ func (e *NativeExecutor) Launch(entry registry.AppEntry) (*Result, error) {
 		name: entry.Name,
 		pid:  cmd.Process.Pid,
 	}
+
+	if entry.Detached {
+		// Don't track or wait — the process is fire-and-forget.
+		// Release so we don't leak a zombie.
+		_ = cmd.Process.Release()
+		return &Result{Name: entry.Name, PID: t.pid}, nil
+	}
+
 	e.procs[entry.Name] = t
 
 	// Monitor the process in a goroutine — no polling, uses waitpid.

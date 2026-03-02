@@ -20,6 +20,7 @@ type AppEntry struct {
 	Description    string `yaml:"description,omitempty" json:"description,omitempty"`
 	ReadyCmd       string `yaml:"ready_cmd,omitempty" json:"ready_cmd,omitempty"`
 	ReadyTimeoutMs int    `yaml:"ready_timeout_ms,omitempty" json:"ready_timeout_ms,omitempty"`
+	Detached       bool   `yaml:"detached,omitempty" json:"detached,omitempty"`
 }
 
 // DefaultConfig returns a Config with sensible default values and an

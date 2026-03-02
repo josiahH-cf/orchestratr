@@ -46,3 +46,21 @@ func TestAppEntryOptionalFields(t *testing.T) {
 		t.Errorf("ReadyTimeoutMs = %d, want %d", cfg.Apps[0].ReadyTimeoutMs, 5000)
 	}
 }
+
+func TestAppEntryDetachedField(t *testing.T) {
+	entry := AppEntry{
+		Name:     "uwp-app",
+		Chord:    "u",
+		Command:  "calc.exe",
+		Detached: true,
+	}
+	if !entry.Detached {
+		t.Error("Detached = false, want true")
+	}
+
+	// Default should be false.
+	entry2 := AppEntry{Name: "normal", Chord: "n", Command: "echo"}
+	if entry2.Detached {
+		t.Error("Detached should default to false")
+	}
+}

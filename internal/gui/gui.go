@@ -22,6 +22,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/josiahH-cf/orchestratr/internal/platform"
 	"github.com/josiahH-cf/orchestratr/internal/registry"
 )
 
@@ -124,7 +125,7 @@ func (s *Server) OpenBrowser() error {
 
 	switch runtime.GOOS {
 	case "linux":
-		cmd = exec.Command("xdg-open", url)
+		cmd = linuxBrowserCmd(url)
 	case "darwin":
 		cmd = exec.Command("open", url)
 	case "windows":
@@ -137,6 +138,28 @@ func (s *Server) OpenBrowser() error {
 		return fmt.Errorf("opening browser: %w (open %s manually)", err, url)
 	}
 	return nil
+}
+
+// linuxBrowserCmd returns the best available browser command for
+// Linux. On WSL2, it tries WSL-aware openers before falling back to
+// xdg-open (OI-4).
+func linuxBrowserCmd(url string) *exec.Cmd {
+	if platform.IsWSL2() {
+		// Try WSL-specific openers in preference order.
+		for _, name := range []string{"wslview", "sensible-browser"} {
+			if _, err := exec.LookPath(name); err == nil {
+				return exec.Command(name, url)
+			}
+		}
+		// Try Windows executables available in WSL.
+		if cmd, err := exec.LookPath("cmd.exe"); err == nil {
+			return exec.Command(cmd, "/c", "start", url)
+		}
+		if ps, err := exec.LookPath("powershell.exe"); err == nil {
+			return exec.Command(ps, "-Command", "Start-Process", url)
+		}
+	}
+	return exec.Command("xdg-open", url)
 }
 
 // Handler returns the HTTP handler for testing.

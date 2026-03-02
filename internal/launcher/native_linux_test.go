@@ -248,3 +248,37 @@ func TestRelaunchAfterExit(t *testing.T) {
 		t.Fatal("timed out waiting for second exit")
 	}
 }
+
+func TestLaunchDetached_NotTracked(t *testing.T) {
+	exitCalled := make(chan struct{}, 1)
+	e := NewNativeExecutor(WithExitCallback(func(name string, err error) {
+		exitCalled <- struct{}{}
+	}))
+
+	entry := registry.AppEntry{
+		Name:     "detached",
+		Command:  "echo done",
+		Detached: true,
+	}
+
+	res, err := e.Launch(entry)
+	if err != nil {
+		t.Fatalf("Launch failed: %v", err)
+	}
+	if res.PID <= 0 {
+		t.Errorf("PID = %d, want > 0", res.PID)
+	}
+
+	// Detached apps should NOT be tracked.
+	if e.IsRunning("detached") {
+		t.Error("detached app should not be tracked as running")
+	}
+
+	// Exit callback should NOT be called for detached apps.
+	select {
+	case <-exitCalled:
+		t.Error("exit callback should not fire for detached app")
+	case <-time.After(500 * time.Millisecond):
+		// Expected: no callback.
+	}
+}

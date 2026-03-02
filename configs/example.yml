@@ -12,3 +12,13 @@ apps:
     environment: wsl
     ready_cmd: "espansr status --json"
     ready_timeout_ms: 3000
+
+  # UWP / detached apps: set detached: true to skip PID tracking.
+  # Useful for Windows UWP apps (e.g., calc.exe) that exit their
+  # parent process immediately after handing off to the UWP host.
+  # - name: calculator
+  #   description: "Windows Calculator (UWP)"
+  #   chord: "c"
+  #   command: "calc.exe"
+  #   environment: native
+  #   detached: true
