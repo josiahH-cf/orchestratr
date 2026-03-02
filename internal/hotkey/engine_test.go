@@ -55,6 +55,17 @@ func (l *testListener) Stop() error {
 	return nil
 }
 
+func (l *testListener) GrabKeyboard() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return nil
+}
+
+func (l *testListener) UngrabKeyboard() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+}
+
 // inject sends a key event into the listener from the test.
 func (l *testListener) inject(k Key, pressed bool) {
 	l.mu.Lock()

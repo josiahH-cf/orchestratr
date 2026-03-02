@@ -191,6 +191,39 @@ func (l *x11Listener) Register(leader Key) (string, error) {
 	return CheckConflicts(leader), nil
 }
 
+// GrabKeyboard grabs the entire keyboard for exclusive input capture.
+// This prevents keystrokes from reaching the focused application during
+// chord-wait. Returns nil on success or if the display is unavailable.
+func (l *x11Listener) GrabKeyboard() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.dpy == nil {
+		return nil
+	}
+
+	status := C.x11_grab_keyboard(l.dpy, l.root)
+	C.x11_flush(l.dpy)
+
+	if status != C.GrabSuccess {
+		return fmt.Errorf("XGrabKeyboard failed (status %d)", int(status))
+	}
+	return nil
+}
+
+// UngrabKeyboard releases the exclusive keyboard grab.
+func (l *x11Listener) UngrabKeyboard() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.dpy == nil {
+		return
+	}
+
+	C.x11_ungrab_keyboard(l.dpy)
+	C.x11_flush(l.dpy)
+}
+
 // Start listens for X11 key events and sends them to the channel.
 // It blocks until Stop is called.
 func (l *x11Listener) Start(events chan<- KeyEvent) error {

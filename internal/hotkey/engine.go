@@ -268,6 +268,7 @@ func (e *Engine) loop() {
 			if chordTimer != nil {
 				chordTimer.Stop()
 			}
+			e.listener.UngrabKeyboard()
 			return
 
 		case evt, ok := <-e.events:
@@ -294,6 +295,13 @@ func (e *Engine) loop() {
 					e.state = StateChordWait
 					e.mu.Unlock()
 
+					// Grab the entire keyboard so chord keystrokes
+					// are captured exclusively and not leaked to the
+					// focused application.
+					if grabErr := e.listener.GrabKeyboard(); grabErr != nil {
+						e.logger.Printf("warning: keyboard grab failed: %v", grabErr)
+					}
+
 					chordTimer = time.NewTimer(e.timeout)
 					chordTimeout = chordTimer.C
 					e.logger.Println("leader key activated, waiting for chord")
@@ -305,6 +313,10 @@ func (e *Engine) loop() {
 					chordTimer = nil
 					chordTimeout = nil
 				}
+
+				// Release the keyboard grab before dispatching so the
+				// launched app can receive normal input immediately.
+				e.listener.UngrabKeyboard()
 
 				canonical := evt.Key.String()
 				e.mu.RLock()
@@ -324,6 +336,7 @@ func (e *Engine) loop() {
 
 		case <-chordTimeout:
 			e.logger.Println("chord timeout expired")
+			e.listener.UngrabKeyboard()
 			chordTimer = nil
 			chordTimeout = nil
 

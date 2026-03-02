@@ -32,6 +32,12 @@ func (s *stubListener) Start(events chan<- KeyEvent) error {
 	return ErrNotImplemented
 }
 
+// GrabKeyboard is a no-op on the stub listener.
+func (s *stubListener) GrabKeyboard() error { return nil }
+
+// UngrabKeyboard is a no-op on the stub listener.
+func (s *stubListener) UngrabKeyboard() {}
+
 // Stop is a no-op on the stub listener.
 func (s *stubListener) Stop() error {
 	return nil

@@ -39,6 +39,16 @@ type Listener interface {
 	// occurs. The caller owns the channel and must ensure it is read.
 	Start(events chan<- KeyEvent) error
 
+	// GrabKeyboard grabs the entire keyboard for exclusive input
+	// capture, preventing keystrokes from reaching the focused
+	// application. Used during chord-wait to suppress key leaking.
+	// Implementations that cannot grab may return nil (best-effort).
+	GrabKeyboard() error
+
+	// UngrabKeyboard releases the exclusive keyboard grab, allowing
+	// normal input to resume. Safe to call even if not grabbed.
+	UngrabKeyboard()
+
 	// Stop releases the global hotkey registration and stops listening.
 	// It is safe to call Stop multiple times.
 	Stop() error
