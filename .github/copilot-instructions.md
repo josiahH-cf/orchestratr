@@ -25,6 +25,10 @@
 - Link to the spec in /specs/ if one exists
 - List files changed, grouped by concern
 
+## Communication
+
+- Ask questions as plain text in chat — never use interactive UI elements (buttons, toggles, quick-picks)
+
 ## Coding Agent
 
 - Read `/AGENTS.md` before starting any task — it defines the feature lifecycle and agent boundaries

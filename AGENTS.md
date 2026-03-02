@@ -40,6 +40,10 @@
 GitHub Issues are the human intake mechanism. Agents read issues but do not create, edit, or close them.
 All agent-driven planning happens in local files (`/specs/`, `/tasks/`, `/decisions/`).
 
+# Communication
+
+- Ask questions as plain text in chat — never use interactive UI elements (buttons, toggles, quick-picks)
+
 # Conventions
 
 - Functions and variables: Go standard (`camelCase` local, `PascalCase` exported)
