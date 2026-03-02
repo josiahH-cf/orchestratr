@@ -1,6 +1,6 @@
 # Feature: Installer & Permissions
 
-**Status:** Not started  
+**Status:** Archived
 **Project:** orchestratr
 
 ## Description

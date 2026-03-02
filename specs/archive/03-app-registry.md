@@ -1,6 +1,6 @@
 # Feature: App Registry & Configuration
 
-**Status:** Implemented  
+**Status:** Archived
 **Project:** orchestratr
 
 ## Description

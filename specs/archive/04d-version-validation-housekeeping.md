@@ -1,6 +1,6 @@
 # Feature: Version & Validation Housekeeping
 
-**Status:** Not started
+**Status:** Archived
 **Parent:** /specs/03-app-registry.md, /specs/04-http-api.md
 **Project:** orchestratr
 

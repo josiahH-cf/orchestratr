@@ -1,6 +1,6 @@
 # Feature: Core Daemon & System Tray
 
-**Status:** In progress  
+**Status:** Archived
 **Project:** orchestratr  
 **Language:** Go
 

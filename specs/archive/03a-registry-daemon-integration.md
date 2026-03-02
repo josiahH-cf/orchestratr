@@ -1,6 +1,6 @@
 # Feature: Registry–Daemon Integration
 
-**Status:** Not started
+**Status:** Archived
 **Parent:** /specs/03-app-registry.md
 **Project:** orchestratr
 

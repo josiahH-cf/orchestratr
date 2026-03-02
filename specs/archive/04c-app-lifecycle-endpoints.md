@@ -1,6 +1,6 @@
 # Feature: App Lifecycle API Endpoints
 
-**Status:** Not started
+**Status:** Archived
 **Parent:** /specs/04-http-api.md
 **Project:** orchestratr
 

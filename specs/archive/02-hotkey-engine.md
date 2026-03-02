@@ -1,6 +1,6 @@
 # Feature: Cross-Platform Hotkey Engine
 
-**Status:** Not started  
+**Status:** Archived
 **Project:** orchestratr
 
 ## Description

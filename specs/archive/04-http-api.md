@@ -1,6 +1,6 @@
 # Feature: HTTP API & IPC Protocol
 
-**Status:** Not started  
+**Status:** Archived
 **Project:** orchestratr
 
 ## Description

@@ -1,6 +1,6 @@
 # Feature: Management GUI
 
-**Status:** Complete  
+**Status:** Archived
 **Project:** orchestratr
 
 ## Description

@@ -1,6 +1,6 @@
 # Feature: Cross-Environment Launching
 
-**Status:** In progress (Phase 1: Linux native launch + PID tracking)  
+**Status:** Archived
 **Project:** orchestratr
 
 ## Description
