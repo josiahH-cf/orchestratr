@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -51,7 +52,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runList(stdout, stderr)
 
 	case "start":
-		return runStart(stdout, stderr)
+		foreground := hasFlag(args[1:], "--foreground")
+		if !foreground {
+			return daemonize(stdout, stderr)
+		}
+		return runStart(stdout, stderr, foreground)
 
 	case "stop":
 		return runStop(stdout, stderr)
@@ -85,8 +90,58 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 }
 
+// hasFlag checks whether a flag is present in the argument slice.
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
+}
+
+// daemonize re-executes the binary with "start --foreground" in the
+// background, prints the child PID, and returns immediately.
+func daemonize(stdout, stderr io.Writer) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolving executable path: %w", err)
+	}
+
+	cmd := execCommand(exe, "start", "--foreground")
+	cmd.Env = os.Environ()
+
+	// Detach from the parent's stdio. The child logs to its own
+	// log file; we don't need its stdout/stderr.
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	if startErr := cmd.Start(); startErr != nil {
+		return fmt.Errorf("starting daemon: %w", startErr)
+	}
+
+	// Release the child so it survives the parent exiting.
+	if releaseErr := cmd.Process.Release(); releaseErr != nil {
+		return fmt.Errorf("releasing daemon process: %w", releaseErr)
+	}
+
+	fmt.Fprintf(stdout, "orchestratr daemon started (PID %d)\n", cmd.Process.Pid)
+	return nil
+}
+
+// execCommand is a variable so tests can override it.
+var execCommand = defaultExecCommand
+
+func defaultExecCommand(name string, args ...string) *exec.Cmd {
+	return exec.Command(name, args...)
+}
+
 // runStart launches the daemon in the foreground.
-func runStart(stdout, stderr io.Writer) error {
+// When foreground is true, the user explicitly requested --foreground
+// (e.g., for interactive debugging). When false, the process was
+// re-executed by daemonize() and should log to file only.
+func runStart(stdout, stderr io.Writer, foreground bool) error {
 	lockPath := lockPathFromEnv()
 	lock, err := daemon.AcquireLock(lockPath)
 	if err != nil {
@@ -126,9 +181,17 @@ func runStart(stdout, stderr io.Writer) error {
 		defer logFile.Close()
 	}
 
+	// When running interactively (--foreground), log to both stderr and
+	// the log file so the user can see output. When daemonized (the
+	// default), log to the file only to avoid leaking API request logs
+	// to the parent's terminal (OI-8).
 	logger := log.New(stderr, "orchestratr: ", log.LstdFlags)
 	if logFile != nil {
-		logger = log.New(io.MultiWriter(stderr, logFile), "orchestratr: ", log.LstdFlags)
+		if foreground {
+			logger = log.New(io.MultiWriter(stderr, logFile), "orchestratr: ", log.LstdFlags)
+		} else {
+			logger = log.New(logFile, "orchestratr: ", log.LstdFlags)
+		}
 	}
 
 	// Declare hotkeyEngine and apiSrv early so the reload closure
@@ -385,7 +448,12 @@ func runStatus(stdout, stderr io.Writer) error {
 		return nil
 	}
 
-	fmt.Fprintf(stdout, "orchestratr is running (PID %d)\n", pid)
+	// Try to read the port file for richer output (OI-7).
+	if port, portErr := readPort(); portErr == nil {
+		fmt.Fprintf(stdout, "orchestratr is running (PID %d, port %d)\n", pid, port)
+	} else {
+		fmt.Fprintf(stdout, "orchestratr is running (PID %d)\n", pid)
+	}
 	return nil
 }
 

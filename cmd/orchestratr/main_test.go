@@ -196,6 +196,88 @@ apps:
 	}
 }
 
+func TestRun_StartForegroundFlag(t *testing.T) {
+	// Verify that "start --foreground" is parsed without error up to the
+	// lock-acquisition stage (which rejects because we write our own PID).
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "orchestratr.pid")
+	t.Setenv("ORCHESTRATR_LOCK_PATH", lockPath)
+
+	// Write our own PID to simulate a running daemon so start exits fast.
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"start", "--foreground"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected lock conflict error")
+	}
+	if !strings.Contains(err.Error(), "another instance") {
+		t.Errorf("error = %q, want 'another instance'", err.Error())
+	}
+}
+
+func TestRun_StatusShowsPort(t *testing.T) {
+	// When the daemon is running and a port file exists, status should
+	// show both PID and port.
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "orchestratr.pid")
+	portPath := filepath.Join(dir, "port")
+
+	t.Setenv("ORCHESTRATR_LOCK_PATH", lockPath)
+	t.Setenv("ORCHESTRATR_PORT_PATH", portPath)
+
+	// Write our own PID and a port file.
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(portPath, []byte("9876"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"status"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run(status) error = %v", err)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "running") {
+		t.Errorf("output = %q, want 'running'", out)
+	}
+	if !strings.Contains(out, "port 9876") {
+		t.Errorf("output = %q, want 'port 9876'", out)
+	}
+}
+
+func TestRun_StatusWithoutPortFile(t *testing.T) {
+	// When the daemon is running but no port file exists, status should
+	// still show PID without error.
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "orchestratr.pid")
+
+	t.Setenv("ORCHESTRATR_LOCK_PATH", lockPath)
+	t.Setenv("ORCHESTRATR_PORT_PATH", filepath.Join(dir, "no-such-port"))
+
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"status"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run(status) error = %v", err)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "running") {
+		t.Errorf("output = %q, want 'running'", out)
+	}
+	// Should NOT contain "port" when file is missing.
+	if strings.Contains(out, "port") {
+		t.Errorf("output = %q, should not contain 'port' without port file", out)
+	}
+}
+
 func TestRun_StatusNotRunning(t *testing.T) {
 	// Point lock path to a temp dir so no PID file exists.
 	dir := t.TempDir()
@@ -236,7 +318,7 @@ func TestRun_StartRejectsDuplicate(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	err := run([]string{"start"}, &stdout, &stderr)
+	err := run([]string{"start", "--foreground"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("run(start) should error when another instance is running")
 	}
