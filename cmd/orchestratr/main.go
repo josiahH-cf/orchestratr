@@ -65,7 +65,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runStatus(stdout, stderr)
 
 	case "trigger":
-		return runTrigger(stdout, stderr)
+		var chord string
+		if len(args) > 1 {
+			chord = args[1]
+		}
+		return runTrigger(chord, stdout, stderr)
 
 	case "launch":
 		if len(args) < 2 {
@@ -636,25 +640,44 @@ func launchApp(exec launcher.Executor, reg *registry.Registry, apiSrv *api.Serve
 	apiSrv.State().SetLaunched(name)
 }
 
-// runTrigger sends a trigger request to the running daemon's API,
-// simulating a leader key press. This is the Wayland manual fallback:
-// users configure their compositor to run "orchestratr trigger" as a
-// custom keybinding.
-func runTrigger(stdout, stderr io.Writer) error {
+// runTrigger sends a trigger request to the running daemon's API.
+// When chord is non-empty, the daemon looks up the chord and launches
+// the matching app directly without the hotkey engine (OI-9, OI-12).
+// When chord is empty, it simulates a leader key press (original
+// behavior — Wayland manual fallback).
+func runTrigger(chord string, stdout, stderr io.Writer) error {
 	port, err := readPort()
 	if err != nil {
 		return fmt.Errorf("daemon is not running: %w", err)
 	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d/trigger", port)
-	resp, err := http.Post(url, "application/json", nil)
+
+	var body io.Reader
+	if chord != "" {
+		body = strings.NewReader(fmt.Sprintf(`{"chord":%q}`, chord))
+	}
+
+	resp, err := http.Post(url, "application/json", body)
 	if err != nil {
 		return fmt.Errorf("sending trigger: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
-		fmt.Fprintln(stdout, "leader key triggered")
+		if chord != "" {
+			var result struct {
+				App string `json:"app"`
+				PID int    `json:"pid"`
+			}
+			if decErr := json.NewDecoder(resp.Body).Decode(&result); decErr == nil && result.App != "" {
+				fmt.Fprintf(stdout, "launched %s (PID %d)\n", result.App, result.PID)
+			} else {
+				fmt.Fprintln(stdout, "chord triggered")
+			}
+		} else {
+			fmt.Fprintln(stdout, "leader key triggered")
+		}
 		return nil
 	}
 

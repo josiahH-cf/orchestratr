@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -390,12 +391,56 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 
 // handleTrigger simulates a leader key press via the API. This is
 // used by the Wayland manual keybinding fallback.
+//
+// When the request body contains a "chord" field, the handler looks
+// up the chord in the registry and launches the matching app directly
+// without requiring the hotkey engine (OI-9, OI-12). This enables
+// compositor keybindings like: orchestratr trigger c
 func (s *Server) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
 		return
 	}
 
+	// Check for an optional chord in the request body.
+	var body struct {
+		Chord string `json:"chord"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	// If a chord is provided, bypass the hotkey engine and launch
+	// the matching app directly.
+	if body.Chord != "" {
+		if s.reg == nil {
+			writeError(w, http.StatusServiceUnavailable, "unavailable", "registry not loaded")
+			return
+		}
+		app, found := s.reg.FindByChord(body.Chord)
+		if !found {
+			writeError(w, http.StatusNotFound, "not_found", fmt.Sprintf("no app with chord %q", body.Chord))
+			return
+		}
+
+		s.mu.Lock()
+		fn := s.launchFn
+		s.mu.Unlock()
+
+		if fn == nil {
+			writeError(w, http.StatusServiceUnavailable, "unavailable", "launcher not configured")
+			return
+		}
+		pid, err := fn(app.Name)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "launch_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "app": app.Name, "pid": pid})
+		return
+	}
+
+	// No chord: simulate a leader key press (original behavior).
 	s.mu.Lock()
 	fn := s.triggerFn
 	s.mu.Unlock()

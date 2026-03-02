@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/josiahH-cf/orchestratr/internal/registry"
@@ -248,6 +249,147 @@ func TestPostReload_WrongMethod(t *testing.T) {
 	handler := s.Handler()
 
 	req := httptest.NewRequest("GET", "/reload", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestPostTrigger_NoChord_NoEngine(t *testing.T) {
+	s := NewServer(0, "v0.0.1", nil, nil)
+	handler := s.Handler()
+
+	req := httptest.NewRequest("POST", "/trigger", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestPostTrigger_NoChord_WithEngine(t *testing.T) {
+	s := NewServer(0, "v0.0.1", nil, nil)
+	triggered := false
+	s.SetTriggerFunc(func() error {
+		triggered = true
+		return nil
+	})
+	handler := s.Handler()
+
+	req := httptest.NewRequest("POST", "/trigger", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !triggered {
+		t.Error("trigger function was not called")
+	}
+}
+
+func TestPostTrigger_WithChord_LaunchesApp(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{
+			{Name: "calculator", Chord: "c", Command: "calc", Environment: "native"},
+			{Name: "terminal", Chord: "t", Command: "xterm", Environment: "native"},
+		},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "v0.0.1", reg, nil)
+
+	var launchedApp string
+	s.SetLaunchFunc(func(name string) (int, error) {
+		launchedApp = name
+		return 42, nil
+	})
+	handler := s.Handler()
+
+	body := strings.NewReader(`{"chord":"c"}`)
+	req := httptest.NewRequest("POST", "/trigger", body)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if launchedApp != "calculator" {
+		t.Errorf("launched app = %q, want %q", launchedApp, "calculator")
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["app"] != "calculator" {
+		t.Errorf("resp.app = %v, want %q", resp["app"], "calculator")
+	}
+}
+
+func TestPostTrigger_WithChord_NotFound(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{
+			{Name: "calculator", Chord: "c", Command: "calc", Environment: "native"},
+		},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "v0.0.1", reg, nil)
+	s.SetLaunchFunc(func(name string) (int, error) {
+		return 1, nil
+	})
+	handler := s.Handler()
+
+	body := strings.NewReader(`{"chord":"x"}`)
+	req := httptest.NewRequest("POST", "/trigger", body)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d; body: %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestPostTrigger_WithChord_NoLauncher(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{
+			{Name: "calculator", Chord: "c", Command: "calc", Environment: "native"},
+		},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "v0.0.1", reg, nil)
+	// No launchFn set
+	handler := s.Handler()
+
+	body := strings.NewReader(`{"chord":"c"}`)
+	req := httptest.NewRequest("POST", "/trigger", body)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestPostTrigger_WrongMethod(t *testing.T) {
+	s := NewServer(0, "v0.0.1", nil, nil)
+	handler := s.Handler()
+
+	req := httptest.NewRequest("GET", "/trigger", nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	rec := httptest.NewRecorder()
 
