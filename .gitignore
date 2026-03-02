@@ -19,5 +19,11 @@ Thumbs.db
 # Agent personal config
 CLAUDE.local.md
 
+# Claude session artifacts
+.claude/plans/
+
+# Local agent permission overrides
+.claude/settings.local.json
+
 # Worktrees
 .trees/

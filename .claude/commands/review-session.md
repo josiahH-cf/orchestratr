@@ -68,3 +68,26 @@ If complete: produce a session summary:
   - Any features needing a Build session to address failures
 
 State: "All features that passed review have open PRs. Remaining items need Build sessions to address review failures. Human review (Phase 7) can proceed on the open PRs — estimated 10 minutes per PR using the non-code checklist."
+PLAN (interactive, batch)
+  Phase 0: Ideate → Issue            ↺ repeat per idea
+  Phase 1: Scope  → Spec               ↰ split back to Phase 0 if criteria > 7
+  Phase 2: Plan   → Tasks / ExecPlan   ↰ split back to Phase 1 if tasks > 5
+  → "Plan another?" loop
+
+BUILD (autonomous, one feature per session)
+  Phase 3: Test   → Committed failing tests
+  Phase 4: Implement → Committed code   ↺ repeat per task
+  → Resume in fresh session if context constrained
+
+REVIEW & SHIP (batch)
+  Phase 5/5b: Review → PASS/FAIL report   ↰ fail sends back to Build
+  Phase 6: PR Create (on pass)
+  → "Review another?" loop
+
+HUMAN (Phase 7)
+  Merge via non-code checklist → Done
+/specs/[name].md        produced by: Plan     consumed by: Build, Review & Ship
+/tasks/[name].md        produced by: Plan     consumed by: Build, Review & Ship
+/decisions/[NNNN].md    produced by: Build    consumed by: future sessions
+ExecPlan                produced by: Plan     consumed by: Build (long-run only)
+PR                      produced by: Review   consumed by: Human
