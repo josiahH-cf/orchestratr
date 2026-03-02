@@ -22,7 +22,9 @@ static int x11_io_error_handler(Display* dpy) {
 		// exit call. The event loop will exit via stopCh anyway.
 		return 0;
 	}
-	// Default behavior for non-shutdown errors: print and exit.
+	// Suppress non-shutdown IO errors silently. Such errors are rare
+	// during normal operation; the event loop will detect a broken
+	// connection via waitForFd and exit naturally.
 	return 0;
 }
 

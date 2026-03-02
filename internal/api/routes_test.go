@@ -385,6 +385,27 @@ func TestPostTrigger_WithChord_NoLauncher(t *testing.T) {
 	}
 }
 
+func TestPostTrigger_WithChord_NilRegistry(t *testing.T) {
+	// When a chord is supplied but the registry is nil, the handler
+	// should return 503 (registry not loaded), not panic.
+	s := NewServer(0, "v0.0.1", nil, nil)
+	s.SetLaunchFunc(func(name string) (int, error) {
+		return 1, nil
+	})
+	handler := s.Handler()
+
+	body := strings.NewReader(`{"chord":"c"}`)
+	req := httptest.NewRequest("POST", "/trigger", body)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d; body: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+}
+
 func TestPostTrigger_WrongMethod(t *testing.T) {
 	s := NewServer(0, "v0.0.1", nil, nil)
 	handler := s.Handler()

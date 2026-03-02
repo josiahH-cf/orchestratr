@@ -53,11 +53,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runList(stdout, stderr)
 
 	case "start":
-		foreground := hasFlag(args[1:], "--foreground")
-		if !foreground {
+		if !hasFlag(args[1:], "--foreground") {
 			return daemonize(stdout, stderr)
 		}
-		return runStart(stdout, stderr, foreground)
+		return runStart(stdout, stderr)
 
 	case "stop":
 		return runStop(stdout, stderr)
@@ -142,11 +141,11 @@ func defaultExecCommand(name string, args ...string) *exec.Cmd {
 	return exec.Command(name, args...)
 }
 
-// runStart launches the daemon in the foreground.
-// When foreground is true, the user explicitly requested --foreground
-// (e.g., for interactive debugging). When false, the process was
-// re-executed by daemonize() and should log to file only.
-func runStart(stdout, stderr io.Writer, foreground bool) error {
+// runStart launches the daemon in the foreground. It is always called
+// with --foreground present; daemonize() handles the background case.
+// When the process is the daemonized child, cmd.Stderr is nil so
+// writing to stderr is harmless (goes to /dev/null) (OI-8).
+func runStart(stdout, stderr io.Writer) error {
 	lockPath := lockPathFromEnv()
 	lock, err := daemon.AcquireLock(lockPath)
 	if err != nil {
@@ -186,17 +185,12 @@ func runStart(stdout, stderr io.Writer, foreground bool) error {
 		defer logFile.Close()
 	}
 
-	// When running interactively (--foreground), log to both stderr and
-	// the log file so the user can see output. When daemonized (the
-	// default), log to the file only to avoid leaking API request logs
-	// to the parent's terminal (OI-8).
+	// Log to both stderr and the log file. When running as the
+	// daemonized child, stderr is /dev/null so no output leaks to the
+	// parent's terminal (OI-8).
 	logger := log.New(stderr, "orchestratr: ", log.LstdFlags)
 	if logFile != nil {
-		if foreground {
-			logger = log.New(io.MultiWriter(stderr, logFile), "orchestratr: ", log.LstdFlags)
-		} else {
-			logger = log.New(logFile, "orchestratr: ", log.LstdFlags)
-		}
+		logger = log.New(io.MultiWriter(stderr, logFile), "orchestratr: ", log.LstdFlags)
 	}
 
 	// Declare hotkeyEngine and apiSrv early so the reload closure
