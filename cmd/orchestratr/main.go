@@ -303,10 +303,12 @@ func runStart(stdout, stderr io.Writer, verbose bool) error {
 	})
 	d.SetLogger(logger)
 
-	// Set up system tray.
-	var trayProvider tray.Provider = &tray.HeadlessProvider{}
+	// Set up system tray. NewPlatformProvider returns HeadlessProvider
+	// automatically when no desktop environment is detected.
+	trayProvider := tray.NewPlatformProvider()
 	if setupErr := trayProvider.Setup(); setupErr != nil {
-		logger.Printf("warning: tray setup failed: %v", setupErr)
+		logger.Printf("warning: tray setup failed: %v; falling back to headless", setupErr)
+		trayProvider = &tray.HeadlessProvider{}
 	}
 
 	// Build the app launcher.
