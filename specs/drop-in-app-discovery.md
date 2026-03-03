@@ -107,7 +107,7 @@ type AppEntry struct {
     Name           string `yaml:"name" json:"name"`
     Chord          string `yaml:"chord" json:"chord"`
     Command        string `yaml:"command" json:"command"`
-    Environment    string `yaml:"environment,omitempty" json:"environment,omitempty"`
+    Environment    string `yaml:"environment" json:"environment"`
     Description    string `yaml:"description,omitempty" json:"description,omitempty"`
     ReadyCmd       string `yaml:"ready_cmd,omitempty" json:"ready_cmd,omitempty"`
     ReadyTimeoutMs int    `yaml:"ready_timeout_ms,omitempty" json:"ready_timeout_ms,omitempty"`

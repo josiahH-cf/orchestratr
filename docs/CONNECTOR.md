@@ -29,7 +29,6 @@ ready_timeout_ms: 5000
 
 ```bash
 orchestratr list          # should show your app
-orchestratr doctor        # check for issues
 # Ctrl+Space → m          # launch it
 ```
 
@@ -46,6 +45,7 @@ That's it for manual registration. For automated registration (recommended), rea
 | `description` | string | no | — | Human-readable description |
 | `ready_cmd` | string | no | — | Health check command (exit 0 = ready) |
 | `ready_timeout_ms` | int | no | `5000` | Max polling time for `ready_cmd` |
+| `detached` | bool | no | `false` | Skip PID tracking (for UWP apps etc.) |
 
 ### Reserved Chords
 
@@ -109,8 +109,8 @@ For apps that should self-register, implement a connector module. The full proto
 
 ### Reference Implementations
 
-- **espansr**: `espansr/integrations/orchestratr.py`
-- **templatr**: `templatr/integrations/orchestratr.py`
+- **espansr**: `espansr/espansr/integrations/orchestratr.py` (complete)
+- **templatr**: `templatr/templatr/integrations/orchestratr.py` (spec: `templatr/specs/orchestratr-connector.md`)
 
 ## Troubleshooting
 
@@ -118,17 +118,17 @@ For apps that should self-register, implement a connector module. The full proto
 # Is the daemon running?
 orchestratr status
 
-# Full diagnostic
-orchestratr doctor
-
 # See registered apps and their source
 orchestratr list
 
-# Watch events in real-time
-orchestratr start --verbose
-
 # Check a specific manifest
 cat ~/.config/orchestratr/apps.d/myapp.yml
+
+# Full diagnostic (planned — see specs/startup-diagnostic.md)
+# orchestratr doctor
+
+# Watch events in real-time (planned — see specs/startup-diagnostic.md)
+# orchestratr start --verbose
 ```
 
 ## Architecture
