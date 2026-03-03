@@ -1,6 +1,6 @@
 # Feature: Windows Platform Layer (Hotkey Listener + Executor + Focus)
 
-**Status:** Not started
+**Status:** Implemented
 **Project:** orchestratr
 
 ## Description
@@ -50,18 +50,18 @@ The Windows implementation must handle environment-based routing (`native` vs `w
 
 ## Acceptance Criteria
 
-- [ ] On Windows, `orchestratr start` registers the configured leader key as a system-wide hotkey via `RegisterHotKey`
-- [ ] Pressing the leader key enters chord-wait state; the next keypress is captured via a low-level keyboard hook (`SetWindowsHookEx` with `WH_KEYBOARD_LL`)
-- [ ] Chord match triggers `OnAction(appName)` through the existing engine
-- [ ] Apps with `environment: native` (or empty) are launched via the Windows shell (`cmd.exe /c` or `CreateProcess`)
-- [ ] Apps with `environment: wsl` are launched via `wsl.exe -d <default_distro> -- bash -lc "<command>"`
-- [ ] Apps with `environment: wsl:<distro>` are launched via `wsl.exe -d <distro> -- bash -lc "<command>"`
-- [ ] If `environment: wsl` without a specific distro, the default is resolved from `wsl --list --quiet` (first line)
-- [ ] Running apps are focused via `SetForegroundWindow` (found by PID via `EnumWindows`) instead of re-launched
-- [ ] If `orchestratr start` is run inside WSL2 (detected via `platform.IsWSL2()`), it prints the `WSL2Warning()` message and exits with a non-zero code, unless `--force` is passed
-- [ ] PID tracking works for both native Windows processes and WSL2-launched processes (`wsl.exe` PID)
-- [ ] Process exit detection works via `cmd.Wait()` goroutine (same pattern as Linux)
-- [ ] Windows autostart via registry key `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+- [x] On Windows, `orchestratr start` registers the configured leader key as a system-wide hotkey via `RegisterHotKey`
+- [x] Pressing the leader key enters chord-wait state; the next keypress is captured via a low-level keyboard hook (`SetWindowsHookEx` with `WH_KEYBOARD_LL`)
+- [x] Chord match triggers `OnAction(appName)` through the existing engine
+- [x] Apps with `environment: native` (or empty) are launched via the Windows shell (`cmd.exe /c` or `CreateProcess`)
+- [x] Apps with `environment: wsl` are launched via `wsl.exe -d <default_distro> -- bash -lc "<command>"`
+- [x] Apps with `environment: wsl:<distro>` are launched via `wsl.exe -d <distro> -- bash -lc "<command>"`
+- [x] If `environment: wsl` without a specific distro, the default is resolved from `wsl --list --quiet` (first line)
+- [x] Running apps are focused via `SetForegroundWindow` (found by PID via `EnumWindows`) instead of re-launched
+- [x] If `orchestratr start` is run inside WSL2 (detected via `platform.IsWSL2()`), it prints the `WSL2Warning()` message and exits with a non-zero code, unless `--force` is passed
+- [x] PID tracking works for both native Windows processes and WSL2-launched processes (`wsl.exe` PID)
+- [x] Process exit detection works via `cmd.Wait()` goroutine (same pattern as Linux)
+- [x] Windows autostart via registry key `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
 
 ## Affected Areas
 

@@ -201,6 +201,7 @@ apps:
 func TestRun_StartForegroundFlag(t *testing.T) {
 	// Verify that "start --foreground" is parsed without error up to the
 	// lock-acquisition stage (which rejects because we write our own PID).
+	// --force bypasses the WSL2 guard so this test works on WSL2 hosts.
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, "orchestratr.pid")
 	t.Setenv("ORCHESTRATR_LOCK_PATH", lockPath)
@@ -211,7 +212,7 @@ func TestRun_StartForegroundFlag(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	err := run([]string{"start", "--foreground"}, &stdout, &stderr)
+	err := run([]string{"start", "--foreground", "--force"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("expected lock conflict error")
 	}
@@ -320,7 +321,7 @@ func TestRun_StartRejectsDuplicate(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	err := run([]string{"start", "--foreground"}, &stdout, &stderr)
+	err := run([]string{"start", "--foreground", "--force"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("run(start) should error when another instance is running")
 	}
@@ -613,12 +614,79 @@ func TestRun_StartVerboseFlag(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	err := run([]string{"start", "--foreground", "--verbose"}, &stdout, &stderr)
+	err := run([]string{"start", "--foreground", "--verbose", "--force"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("expected lock conflict error")
 	}
 	// The error should be about "another instance", not about an unknown flag.
 	if !strings.Contains(err.Error(), "another instance") {
 		t.Errorf("error = %q, want 'another instance' (not flag parse error)", err.Error())
+	}
+}
+
+func TestRun_StartWSL2Guard(t *testing.T) {
+	// This test verifies WSL2 guard behavior. Results depend on the
+	// test environment:
+	// - On WSL2: guard fires, returns error mentioning WSL2
+	// - On non-WSL2: guard does not fire, reaches lock stage
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "orchestratr.pid")
+	t.Setenv("ORCHESTRATR_LOCK_PATH", lockPath)
+
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"start", "--foreground"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+
+	isWSL2 := strings.Contains(strings.ToLower(readProcVersion(t)), "microsoft")
+	if isWSL2 {
+		if !strings.Contains(err.Error(), "WSL2") {
+			t.Errorf("on WSL2: error = %q, want WSL2 refusal", err.Error())
+		}
+		if !strings.Contains(stderr.String(), "WSL2") {
+			t.Errorf("on WSL2: stderr should contain WSL2 warning")
+		}
+	} else {
+		if strings.Contains(err.Error(), "WSL2") {
+			t.Errorf("on non-WSL2: error = %q, should not mention WSL2", err.Error())
+		}
+	}
+}
+
+func readProcVersion(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile("/proc/version")
+	if err != nil {
+		return "" // not Linux or can't read — assume non-WSL2
+	}
+	return string(data)
+}
+
+func TestRun_StartForceBypassesWSL2Guard(t *testing.T) {
+	// With --force, start should proceed past the WSL2 guard even if
+	// IsWSL2() were true. On a non-WSL2 system this just confirms
+	// --force does not cause a parse error. The real WSL2 test
+	// requires a WSL2 environment.
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "orchestratr.pid")
+	t.Setenv("ORCHESTRATR_LOCK_PATH", lockPath)
+
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"start", "--foreground", "--force"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected lock conflict error")
+	}
+	// Should be a lock error, not a flag error.
+	if !strings.Contains(err.Error(), "another instance") {
+		t.Errorf("error = %q, want 'another instance'", err.Error())
 	}
 }

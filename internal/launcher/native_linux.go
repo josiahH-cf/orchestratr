@@ -13,13 +13,6 @@ import (
 	"github.com/josiahH-cf/orchestratr/internal/registry"
 )
 
-// tracked holds the state for a single running process.
-type tracked struct {
-	cmd  *exec.Cmd
-	name string
-	pid  int
-}
-
 // NativeExecutor launches apps as child processes on the local host
 // using bash -c to support shell features (pipes, env vars, etc.).
 type NativeExecutor struct {
