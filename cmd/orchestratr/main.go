@@ -40,7 +40,7 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		fmt.Fprintln(stdout, "orchestratr — system-wide app launcher")
-		fmt.Fprintln(stdout, "Usage: orchestratr [start|stop|status|reload|list|launch|trigger|configure|install|uninstall|version]")
+		fmt.Fprintln(stdout, "Usage: orchestratr [start|stop|status|reload|list|launch|trigger|configure|doctor|install|uninstall|version]")
 		return nil
 	}
 
@@ -88,6 +88,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	case "uninstall":
 		return runUninstall(stdout, stderr)
+
+	case "doctor":
+		jsonFlag := hasFlag(args[1:], "--json")
+		return runDoctor(jsonFlag, stdout, stderr)
 
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])

@@ -6,8 +6,8 @@
 ## Status
 
 - Total: 5
-- Complete: 0
-- Remaining: 5
+- Complete: 3
+- Remaining: 2
 
 ## Task List
 
@@ -16,21 +16,21 @@
 - **Files:** `internal/api/state.go`, `internal/api/state_test.go`
 - **Done when:** `AppState` has `Error` and `ErrorAt` fields; `SetError(name, msg)` and `ClearError(name)` methods exist; `SetLaunched` clears error; all existing + new tests pass
 - **Criteria covered:** "Launch failures populate an `error` field on the app's state", "Error state is transient — cleared on next successful launch"
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ### Task 2: Wire Error State into Launch Flow
 
 - **Files:** `cmd/orchestratr/main.go`, `cmd/orchestratr/main_test.go`, `internal/api/server.go`
 - **Done when:** `launchApp()` and the launch API endpoint call `SetError()` on failure; `/apps/{name}/state` includes `error` and `error_at` in JSON; tests verify error propagation
 - **Criteria covered:** "Launch failure errors include: command attempted, error message, environment, and timestamp", "Launch failures populate an `error` field visible via `/apps/{name}/state`"
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ### Task 3: `orchestratr doctor` Command
 
 - **Files:** `cmd/orchestratr/doctor.go`, `cmd/orchestratr/doctor_test.go`
 - **Done when:** `orchestratr doctor` runs all checks (daemon, config, apps.d, commands, WSL, ready_cmd); output has PASS/FAIL/WARN per check; `--json` flag outputs machine-readable JSON; works even when daemon is not running
 - **Criteria covered:** All `orchestratr doctor` acceptance criteria (6 items)
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ### Task 4: Unmatched Chord Logging + Verbose Mode
 
