@@ -6,7 +6,7 @@ Press a leader key chord to instantly launch, focus, or cycle between your inter
 
 ## Status
 
-**Pre-development** — specs complete, implementation not started.
+**In development** — core daemon, hotkey engine, app registry, HTTP API, and web GUI are implemented for Linux/X11. Windows platform layer and drop-in app discovery are in progress.
 
 ## Architecture
 
@@ -37,9 +37,16 @@ See `/specs/` for the complete design:
 - Windows
 - WSL2 (apps launched from Windows-side daemon)
 
+## Connecting Apps
+
+Apps register with orchestratr by writing a YAML manifest to the `apps.d/` drop-in directory. See **[docs/CONNECTOR.md](docs/CONNECTOR.md)** for the full guide — manifest schema, path resolution, health checks, and examples.
+
+For the complete protocol reference (including cross-platform path resolution and code templates): see the workspace-level `/specs/orchestratr-app-connector-protocol.md`.
+
 ## Related
 
-- [espansr](https://github.com/josiahH-cf/espansr) — First app to be orchestrated. See its `specs/espansr-orchestratr-connector.md` for the integration spec.
+- [espansr](https://github.com/josiahH-cf/espansr) — Espanso template manager. Connector: `espansr/integrations/orchestratr.py`
+- [templatr](https://github.com/josiahH-cf/templatr) — Local-model prompt optimizer. Connector: `templatr/integrations/orchestratr.py`
 
 ## License
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -16,11 +17,13 @@ import (
 // successful.
 type ReloadFunc func(path string) error
 
-// Watcher monitors a config file for changes and triggers a reload
-// callback when modifications are detected. It debounces rapid
-// filesystem events to avoid redundant reloads.
+// Watcher monitors a config file and the apps.d directory for
+// changes and triggers a reload callback when modifications are
+// detected. It debounces rapid filesystem events to avoid redundant
+// reloads.
 type Watcher struct {
 	path     string
+	appsDir  string
 	debounce time.Duration
 	onReload ReloadFunc
 	logger   *log.Logger
@@ -50,6 +53,14 @@ func WithLogger(l *log.Logger) WatcherOption {
 	}
 }
 
+// WithAppsDir sets the apps.d directory to watch for drop-in manifests.
+// If empty, only the config file is watched.
+func WithAppsDir(dir string) WatcherOption {
+	return func(w *Watcher) {
+		w.appsDir = dir
+	}
+}
+
 // NewWatcher creates a Watcher that monitors the given config file
 // path and calls onReload when changes are detected.
 func NewWatcher(path string, onReload ReloadFunc, opts ...WatcherOption) *Watcher {
@@ -65,9 +76,10 @@ func NewWatcher(path string, onReload ReloadFunc, opts ...WatcherOption) *Watche
 	return w
 }
 
-// Start begins watching the config file for changes. It blocks until
-// the context is cancelled or Stop is called. Start returns an error
-// if the watcher cannot be initialized.
+// Start begins watching the config file and optionally the apps.d
+// directory for changes. It blocks until the context is cancelled
+// or Stop is called. Start returns an error if the watcher cannot
+// be initialized.
 func (w *Watcher) Start(ctx context.Context) error {
 	w.mu.Lock()
 	if w.running {
@@ -85,6 +97,15 @@ func (w *Watcher) Start(ctx context.Context) error {
 		fsw.Close()
 		w.mu.Unlock()
 		return fmt.Errorf("watching %s: %w", w.path, err)
+	}
+
+	// Also watch apps.d/ directory if configured and exists.
+	if w.appsDir != "" {
+		if _, statErr := os.Stat(w.appsDir); statErr == nil {
+			if addErr := fsw.Add(w.appsDir); addErr != nil {
+				w.logger.Printf("warning: could not watch apps.d directory %s: %v", w.appsDir, addErr)
+			}
+		}
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -136,8 +157,9 @@ func (w *Watcher) loop(ctx context.Context, fsw *fsnotify.Watcher) {
 			if !ok {
 				return
 			}
-			// Only react to write and create events.
-			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
+			// React to write, create, and remove events.
+			// Remove is needed for apps.d/ file deletions.
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove) == 0 {
 				continue
 			}
 			// Debounce: reset the timer on each event.

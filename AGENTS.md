@@ -143,8 +143,21 @@ All agent-driven planning happens in local files (`/specs/`, `/tasks/`, `/decisi
 - Agents do not modify CI/CD workflows without explicit human instruction
 - Agents work within local files: specs, tasks, decisions, and source code
 
+# App Connector Protocol
+
+- orchestratr discovers apps via the **drop-in directory** (`apps.d/`) — see `docs/CONNECTOR.md`
+- Apps write a flat YAML manifest to `~/.config/orchestratr/apps.d/<appname>.yml` (or platform equivalent)
+- Manifest schema matches `AppEntry` exactly: `name`, `chord`, `command`, `environment`, `description`, `ready_cmd`, `ready_timeout_ms`
+- `config.yml` entries take precedence over `apps.d/` entries on conflict
+- Full protocol reference: workspace-level `/specs/orchestratr-app-connector-protocol.md`
+
+Key files for the connector:
+- `internal/registry/loader.go` — `apps.d/` scanning and merge logic
+- `internal/registry/watcher.go` — file watcher for `apps.d/` directory
+- `internal/registry/validate.go` — merge-conflict validation
+- `docs/CONNECTOR.md` — developer-facing connector guide
+
 # Related Projects
 
-- **espansr** — Espanso template manager (Python/PyQt6). First app to be orchestrated.
-  - Connector spec: see `espansr/specs/espansr-orchestratr-connector.md` in the espansr repo
-  - Provides `orchestratr.yml` manifest and `espansr status --json` for health checks
+- **espansr** — Espanso template manager (Python/PyQt6). Connector: `espansr/integrations/orchestratr.py`, spec: `espansr/specs/manifest-schema-alignment.md`
+- **templatr** — Local-model prompt optimizer (Python/PyQt6). Connector: `templatr/integrations/orchestratr.py`, spec: `templatr/specs/orchestratr-connector.md`

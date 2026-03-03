@@ -266,3 +266,109 @@ func TestWatcher_ReloadError(t *testing.T) {
 		t.Error("reload should have been called even when it returns an error")
 	}
 }
+
+func TestWatcher_DetectsAppsDirChange(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yml")
+	appsDir := filepath.Join(dir, "apps.d")
+
+	if err := os.WriteFile(cfgPath, []byte("apps: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(appsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var reloadCount atomic.Int32
+	reload := func(p string) error {
+		reloadCount.Add(1)
+		return nil
+	}
+
+	w := NewWatcher(cfgPath, reload,
+		WithDebounce(50*time.Millisecond),
+		WithAppsDir(appsDir),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := w.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer w.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Create a new drop-in file in apps.d/.
+	if err := os.WriteFile(filepath.Join(appsDir, "newapp.yml"), []byte("name: newapp\nchord: n\ncommand: echo new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.After(2 * time.Second)
+	for reloadCount.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for reload after apps.d change")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	if got := reloadCount.Load(); got < 1 {
+		t.Errorf("reload count = %d, want >= 1", got)
+	}
+}
+
+func TestWatcher_DetectsAppsDirDeletion(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yml")
+	appsDir := filepath.Join(dir, "apps.d")
+
+	if err := os.WriteFile(cfgPath, []byte("apps: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(appsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-create a file so we can delete it.
+	dropinPath := filepath.Join(appsDir, "toremove.yml")
+	if err := os.WriteFile(dropinPath, []byte("name: toremove\nchord: r\ncommand: echo rm\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var reloadCount atomic.Int32
+	reload := func(p string) error {
+		reloadCount.Add(1)
+		return nil
+	}
+
+	w := NewWatcher(cfgPath, reload,
+		WithDebounce(50*time.Millisecond),
+		WithAppsDir(appsDir),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := w.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer w.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Delete the drop-in file.
+	if err := os.Remove(dropinPath); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.After(2 * time.Second)
+	for reloadCount.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for reload after apps.d file deletion")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
