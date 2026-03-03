@@ -37,15 +37,23 @@ func ValidateConfig(cfg *Config) []error {
 }
 
 // validateAppEntry checks a single app entry for required fields and
-// valid values.
+// valid values. The prefix includes source attribution when available.
 func validateAppEntry(index int, app *AppEntry) []error {
 	var errs []error
 	prefix := fmt.Sprintf("apps[%d]", index)
 
+	if app.Source != "" && app.Source != "config" {
+		prefix = fmt.Sprintf("%s", app.Source)
+	}
+
 	if app.Name == "" {
 		errs = append(errs, fmt.Errorf("%s: name is required", prefix))
 	} else {
-		prefix = fmt.Sprintf("apps[%d] (%s)", index, app.Name)
+		if app.Source != "" && app.Source != "config" {
+			prefix = fmt.Sprintf("%s (%s)", app.Source, app.Name)
+		} else {
+			prefix = fmt.Sprintf("apps[%d] (%s)", index, app.Name)
+		}
 	}
 
 	if app.Chord == "" {

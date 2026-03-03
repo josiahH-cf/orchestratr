@@ -159,13 +159,16 @@ func runStart(stdout, stderr io.Writer) error {
 		cfgPath = envPath
 	}
 
-	// Ensure default config exists on first run.
+	// Ensure default config and apps.d/ directory exist on first run.
 	if _, ensureErr := registry.EnsureDefaults(cfgPath); ensureErr != nil {
 		fmt.Fprintf(stderr, "warning: could not create default config: %v\n", ensureErr)
 	}
+	if ensureErr := registry.EnsureAppsDir(cfgPath); ensureErr != nil {
+		fmt.Fprintf(stderr, "warning: could not create apps.d directory: %v\n", ensureErr)
+	}
 
 	apiPort := 9876 // default
-	cfg, err := registry.LoadAndValidate(cfgPath)
+	cfg, err := registry.LoadWithDropins(cfgPath, nil)
 	if err == nil && cfg.APIPort > 0 {
 		apiPort = cfg.APIPort
 	}
@@ -200,7 +203,7 @@ func runStart(stdout, stderr io.Writer) error {
 
 	// Build reload function for POST /reload and file watcher.
 	reloadFn := func() (*registry.Config, error) {
-		newCfg, loadErr := registry.LoadAndValidate(cfgPath)
+		newCfg, loadErr := registry.LoadWithDropins(cfgPath, logger)
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -409,12 +412,16 @@ func runStart(stdout, stderr io.Writer) error {
 	}()
 	_ = trayProvider.SetState("running")
 
-	// Start file watcher for config hot-reload.
+	// Start file watcher for config hot-reload (watches both config.yml and apps.d/).
 	watcherReload := func(path string) error {
 		_, err := reloadFn()
 		return err
 	}
-	w := registry.NewWatcher(cfgPath, watcherReload, registry.WithLogger(logger))
+	appsDir := registry.AppsDirPath(cfgPath)
+	w := registry.NewWatcher(cfgPath, watcherReload,
+		registry.WithLogger(logger),
+		registry.WithAppsDir(appsDir),
+	)
 	if watchErr := w.Start(context.Background()); watchErr != nil {
 		logger.Printf("warning: file watcher not available: %v", watchErr)
 	} else {
@@ -507,7 +514,7 @@ func runList(stdout, stderr io.Writer) error {
 		path = envPath
 	}
 
-	cfg, err := registry.LoadAndValidate(path)
+	cfg, err := registry.LoadWithDropins(path, nil)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("config not found at %s\nRun orchestratr once to generate a default config, or set ORCHESTRATR_CONFIG", path)
@@ -526,7 +533,7 @@ func runList(stdout, stderr io.Writer) error {
 
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	if states != nil {
-		fmt.Fprintln(w, "NAME\tCHORD\tSTATUS\tCOMMAND\tENV\tDESCRIPTION")
+		fmt.Fprintln(w, "NAME\tCHORD\tSOURCE\tSTATUS\tCOMMAND\tENV\tDESCRIPTION")
 		for _, app := range cfg.Apps {
 			status := "stopped"
 			if s, ok := states[app.Name]; ok && s.Launched {
@@ -535,14 +542,14 @@ func runList(stdout, stderr io.Writer) error {
 					status = "ready"
 				}
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				app.Name, app.Chord, status, app.Command, app.Environment, app.Description)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				app.Name, app.Chord, app.Source, status, app.Command, app.Environment, app.Description)
 		}
 	} else {
-		fmt.Fprintln(w, "NAME\tCHORD\tCOMMAND\tENV\tDESCRIPTION")
+		fmt.Fprintln(w, "NAME\tCHORD\tSOURCE\tCOMMAND\tENV\tDESCRIPTION")
 		for _, app := range cfg.Apps {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				app.Name, app.Chord, app.Command, app.Environment, app.Description)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				app.Name, app.Chord, app.Source, app.Command, app.Environment, app.Description)
 		}
 	}
 	return w.Flush()

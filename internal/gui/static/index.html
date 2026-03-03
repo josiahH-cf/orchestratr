@@ -78,6 +78,12 @@
   .status-badge.stopped { background: rgba(243,139,168,0.15); color: var(--danger); }
   .status-badge.launched { background: rgba(250,179,135,0.15); color: var(--warn); }
   .status-badge.ready { background: rgba(166,227,161,0.15); color: var(--success); }
+  .source-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 12px;
+    font-size: 0.75rem; font-weight: 500;
+    background: rgba(137,180,250,0.15); color: var(--accent);
+  }
+  .source-badge.dropin { background: rgba(250,179,135,0.15); color: var(--warn); }
 
   /* Buttons */
   button {
@@ -178,7 +184,7 @@
 <table id="appTable">
   <thead>
     <tr>
-      <th>Name</th><th>Chord</th><th>Command</th><th>Env</th><th>Status</th><th></th>
+      <th>Name</th><th>Chord</th><th>Command</th><th>Env</th><th>Source</th><th>Status</th><th></th>
     </tr>
   </thead>
   <tbody id="appTableBody">
@@ -289,7 +295,7 @@ function renderTable() {
   const apps = config.apps || [];
 
   if (apps.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No apps registered. Click "+ Add App" to get started.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No apps registered. Click "+ Add App" to get started.</td></tr>';
     return;
   }
 
@@ -299,17 +305,26 @@ function renderTable() {
     if (state && state.launched) {
       status = state.ready ? 'ready' : 'launched';
     }
+    const source = app.source || 'config';
+    const isDropin = source.startsWith('apps.d/');
+    const sourceClass = isDropin ? 'source-badge dropin' : 'source-badge';
+    const sourceLabel = isDropin ? source.replace('apps.d/', '') : 'config';
+    const actions = isDropin
+      ? `<span style="font-size:0.75rem;color:var(--text-dim)" title="Managed by ${esc(source)}. Edit via that app's settings or the file directly.">read-only</span>`
+      : `<button class="btn-secondary btn-sm" onclick="showEditForm(${i})">Edit</button>
+        <button class="btn-danger btn-sm" onclick="removeApp(${i})">Remove</button>`;
     return `<tr>
       <td>${esc(app.name)}</td>
       <td><code>${esc(app.chord)}</code></td>
       <td><code>${esc(app.command)}</code></td>
       <td>${esc(app.environment || 'native')}</td>
+      <td><span class="${sourceClass}">${esc(sourceLabel)}</span></td>
       <td><span class="status-badge ${status}">${status}</span></td>
       <td class="actions">
-        <button class="btn-secondary btn-sm" onclick="showEditForm(${i})">Edit</button>
-        <button class="btn-danger btn-sm" onclick="removeApp(${i})">Remove</button>
+        ${actions}
       </td>
     </tr>`;
+  }).join('');
   }).join('');
 }
 
