@@ -6,6 +6,7 @@ package launcher
 import (
 	"errors"
 	"log"
+	"os/exec"
 
 	"github.com/josiahH-cf/orchestratr/internal/registry"
 )
@@ -37,6 +38,13 @@ type Result struct {
 	Name string
 	// PID is the OS process ID of the spawned process.
 	PID int
+}
+
+// tracked holds the state for a single running process.
+type tracked struct {
+	cmd  *exec.Cmd
+	name string
+	pid  int
 }
 
 // Executor launches and tracks app processes. Implementations are
