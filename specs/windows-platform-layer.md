@@ -1,6 +1,6 @@
 # Feature: Windows Platform Layer (Hotkey Listener + Executor + Focus)
 
-**Status:** Not started
+**Status:** Implemented
 **Project:** orchestratr
 
 ## Description

@@ -23,6 +23,7 @@ import (
 	"github.com/josiahH-cf/orchestratr/internal/gui"
 	"github.com/josiahH-cf/orchestratr/internal/hotkey"
 	"github.com/josiahH-cf/orchestratr/internal/launcher"
+	"github.com/josiahH-cf/orchestratr/internal/platform"
 	"github.com/josiahH-cf/orchestratr/internal/registry"
 	"github.com/josiahH-cf/orchestratr/internal/tray"
 )
@@ -53,6 +54,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return runList(stdout, stderr)
 
 	case "start":
+		// Guard: warn and exit if running inside WSL2, unless --force.
+		if platform.IsWSL2() && !hasFlag(args[1:], "--force") {
+			fmt.Fprintln(stderr, platform.WSL2Warning())
+			return fmt.Errorf("refusing to start inside WSL2 (use --force to override)")
+		}
 		if !hasFlag(args[1:], "--foreground") {
 			return daemonize(stdout, stderr)
 		}

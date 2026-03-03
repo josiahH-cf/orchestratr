@@ -3,6 +3,9 @@ package autostart
 import "runtime"
 
 // NewManager returns the platform-appropriate autostart Manager.
+// On Windows, this delegates to newPlatformManager() which returns
+// a RegistryManager backed by the Windows registry. On other
+// platforms, it returns the appropriate file-based manager.
 func NewManager() Manager {
 	switch runtime.GOOS {
 	case "linux":
@@ -10,7 +13,7 @@ func NewManager() Manager {
 	case "darwin":
 		return &DarwinManager{}
 	case "windows":
-		return &WindowsManager{}
+		return newPlatformManager()
 	default:
 		return &StubManager{}
 	}
