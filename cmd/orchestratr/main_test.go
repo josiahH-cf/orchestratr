@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/josiahH-cf/orchestratr/internal/api"
 	"github.com/josiahH-cf/orchestratr/internal/daemon"
@@ -536,5 +538,87 @@ apps:
 	}
 	if !strings.Contains(err.Error(), "reload failed") {
 		t.Errorf("error = %q, want 'reload failed'", err.Error())
+	}
+}
+
+func TestVerboseEvent_Format(t *testing.T) {
+	var buf bytes.Buffer
+	emitVerboseEvent(&buf, "leader_key_pressed", nil)
+
+	out := buf.String()
+	if !strings.Contains(out, "EVENT") {
+		t.Errorf("output = %q, want EVENT prefix", out)
+	}
+	if !strings.Contains(out, "leader_key_pressed") {
+		t.Errorf("output = %q, want event type", out)
+	}
+}
+
+func TestVerboseEvent_WithFields(t *testing.T) {
+	var buf bytes.Buffer
+	emitVerboseEvent(&buf, "chord_received", map[string]string{
+		"chord": "e",
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "chord=e") {
+		t.Errorf("output = %q, want chord=e", out)
+	}
+}
+
+func TestVerboseEvent_AppLaunching(t *testing.T) {
+	var buf bytes.Buffer
+	emitVerboseEvent(&buf, "app_launching", map[string]string{
+		"name":    "espansr",
+		"command": "espansr gui",
+		"env":     "wsl",
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "app_launching") {
+		t.Errorf("output = %q, want app_launching", out)
+	}
+	if !strings.Contains(out, "name=espansr") {
+		t.Errorf("output = %q, want name=espansr", out)
+	}
+}
+
+func TestVerboseEvent_Timestamp(t *testing.T) {
+	var buf bytes.Buffer
+	emitVerboseEvent(&buf, "test_event", nil)
+
+	out := buf.String()
+	// Should start with a timestamp in brackets.
+	if len(out) < 2 || out[0] != '[' {
+		t.Errorf("output = %q, want timestamp in brackets", out)
+	}
+	// Verify year is present (basic sanity check).
+	year := fmt.Sprintf("%d", time.Now().Year())
+	if !strings.Contains(out, year) {
+		t.Errorf("output = %q, want current year %s", out, year)
+	}
+}
+
+func TestRun_StartVerboseFlag(t *testing.T) {
+	// Verify that "start --foreground --verbose" is parsed correctly.
+	// It will fail at lock acquisition (same as existing foreground test),
+	// but we verify the flag is accepted without error.
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "orchestratr.pid")
+	t.Setenv("ORCHESTRATR_LOCK_PATH", lockPath)
+
+	// Write our own PID to simulate a running daemon so start exits fast.
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"start", "--foreground", "--verbose"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected lock conflict error")
+	}
+	// The error should be about "another instance", not about an unknown flag.
+	if !strings.Contains(err.Error(), "another instance") {
+		t.Errorf("error = %q, want 'another instance' (not flag parse error)", err.Error())
 	}
 }

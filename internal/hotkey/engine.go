@@ -31,6 +31,22 @@ func (s EngineState) String() string {
 	}
 }
 
+// Event type constants for EngineEvent.
+const (
+	// EventLeaderPressed is emitted when the leader key is pressed.
+	EventLeaderPressed = "leader_key_pressed"
+	// EventChordReceived is emitted when a chord key is pressed after the leader.
+	EventChordReceived = "chord_received"
+	// EventChordTimeout is emitted when the chord wait window expires.
+	EventChordTimeout = "chord_timeout"
+)
+
+// EngineEvent represents a diagnostic event from the hotkey engine.
+type EngineEvent struct {
+	Type   string
+	Fields map[string]string
+}
+
 // Chord maps a key sequence to a named action.
 type Chord struct {
 	Key    Key
@@ -40,6 +56,10 @@ type Chord struct {
 // ActionFunc is called when a chord is matched. The argument is the
 // action string from the matched Chord.
 type ActionFunc func(action string)
+
+// EventFunc is called when the engine produces a diagnostic event.
+// It is optional and may be nil.
+type EventFunc func(event EngineEvent)
 
 // EngineConfig holds configuration for the hotkey Engine.
 type EngineConfig struct {
@@ -52,6 +72,9 @@ type EngineConfig struct {
 	Chords []Chord
 	// OnAction is called when a chord matches. Must not be nil.
 	OnAction ActionFunc
+	// OnEvent is called when the engine produces a diagnostic event.
+	// Optional — if nil, events are silently discarded.
+	OnEvent EventFunc
 	// Logger receives diagnostic messages. If nil, a default is used.
 	Logger *log.Logger
 }
@@ -63,6 +86,7 @@ type Engine struct {
 	timeout  time.Duration
 	chords   map[string]string // key.String() → action
 	onAction ActionFunc
+	onEvent  EventFunc
 	logger   *log.Logger
 
 	listener Listener
@@ -115,6 +139,7 @@ func NewEngine(cfg EngineConfig, listener Listener) (*Engine, error) {
 		timeout:  timeout,
 		chords:   chordMap,
 		onAction: cfg.OnAction,
+		onEvent:  cfg.OnEvent,
 		logger:   logger,
 		listener: listener,
 		events:   make(chan KeyEvent, 16),
@@ -305,6 +330,7 @@ func (e *Engine) loop() {
 					chordTimer = time.NewTimer(e.timeout)
 					chordTimeout = chordTimer.C
 					e.logger.Println("leader key activated, waiting for chord")
+					e.emitEvent(EngineEvent{Type: EventLeaderPressed})
 				}
 
 			case StateChordWait:
@@ -324,9 +350,24 @@ func (e *Engine) loop() {
 				e.mu.RUnlock()
 				if ok {
 					e.logger.Printf("chord matched: %s → %s", canonical, action)
+					e.emitEvent(EngineEvent{
+						Type: EventChordReceived,
+						Fields: map[string]string{
+							"chord":   canonical,
+							"action":  action,
+							"matched": "true",
+						},
+					})
 					e.onAction(action)
 				} else {
-					e.logger.Printf("unrecognized chord: %s (ignoring)", canonical)
+					e.logger.Printf("[DEBUG] unmatched chord: %s", canonical)
+					e.emitEvent(EngineEvent{
+						Type: EventChordReceived,
+						Fields: map[string]string{
+							"chord":   canonical,
+							"matched": "false",
+						},
+					})
 				}
 
 				e.mu.Lock()
@@ -343,6 +384,14 @@ func (e *Engine) loop() {
 			e.mu.Lock()
 			e.state = StateIdle
 			e.mu.Unlock()
+			e.emitEvent(EngineEvent{Type: EventChordTimeout})
 		}
+	}
+}
+
+// emitEvent calls the OnEvent callback if it is set.
+func (e *Engine) emitEvent(evt EngineEvent) {
+	if e.onEvent != nil {
+		e.onEvent(evt)
 	}
 }

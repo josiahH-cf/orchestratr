@@ -56,7 +56,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		if !hasFlag(args[1:], "--foreground") {
 			return daemonize(stdout, stderr)
 		}
-		return runStart(stdout, stderr)
+		verbose := hasFlag(args[1:], "--verbose")
+		return runStart(stdout, stderr, verbose)
 
 	case "stop":
 		return runStop(stdout, stderr)
@@ -96,6 +97,21 @@ func run(args []string, stdout, stderr io.Writer) error {
 	default:
 		return fmt.Errorf("unknown command: %s", args[0])
 	}
+}
+
+// emitVerboseEvent writes a structured event line to w in the format:
+// [<timestamp>] EVENT <type> key1=value1 key2=value2
+func emitVerboseEvent(w io.Writer, eventType string, fields map[string]string) {
+	ts := time.Now().Format(time.RFC3339)
+	line := fmt.Sprintf("[%s] EVENT %s", ts, eventType)
+	for k, v := range fields {
+		if strings.ContainsAny(v, " \t\"") {
+			line += fmt.Sprintf(" %s=%q", k, v)
+		} else {
+			line += fmt.Sprintf(" %s=%s", k, v)
+		}
+	}
+	fmt.Fprintln(w, line)
 }
 
 // hasFlag checks whether a flag is present in the argument slice.
@@ -149,7 +165,7 @@ func defaultExecCommand(name string, args ...string) *exec.Cmd {
 // with --foreground present; daemonize() handles the background case.
 // When the process is the daemonized child, cmd.Stderr is nil so
 // writing to stderr is harmless (goes to /dev/null) (OI-8).
-func runStart(stdout, stderr io.Writer) error {
+func runStart(stdout, stderr io.Writer, verbose bool) error {
 	lockPath := lockPathFromEnv()
 	lock, err := daemon.AcquireLock(lockPath)
 	if err != nil {
@@ -205,6 +221,14 @@ func runStart(stdout, stderr io.Writer) error {
 	var hotkeyEngine *hotkey.Engine
 	var apiSrv *api.Server
 
+	// Build verbose event emitter (no-op when --verbose is not set).
+	verboseEmit := func(eventType string, fields map[string]string) {}
+	if verbose {
+		verboseEmit = func(eventType string, fields map[string]string) {
+			emitVerboseEvent(stderr, eventType, fields)
+		}
+	}
+
 	// Build reload function for POST /reload and file watcher.
 	reloadFn := func() (*registry.Config, error) {
 		newCfg, loadErr := registry.LoadWithDropins(cfgPath, logger)
@@ -232,6 +256,9 @@ func runStart(stdout, stderr io.Writer) error {
 			apiSrv.State().Sync(names)
 		}
 
+		verboseEmit("config_reloaded", map[string]string{
+			"apps": strconv.Itoa(len(newCfg.Apps)),
+		})
 		return newCfg, nil
 	}
 
@@ -305,7 +332,17 @@ func runStart(stdout, stderr io.Writer) error {
 			Chords:         chords,
 			OnAction: func(action string) {
 				logger.Printf("chord dispatched: %s", action)
-				launchApp(ctx, exec, reg, apiSrv, logger, action, trayProvider)
+				launchApp(ctx, exec, reg, apiSrv, logger, action, trayProvider, verboseEmit)
+			},
+			OnEvent: func(evt hotkey.EngineEvent) {
+				switch evt.Type {
+				case hotkey.EventLeaderPressed:
+					verboseEmit("leader_key_pressed", nil)
+				case hotkey.EventChordReceived:
+					verboseEmit("chord_received", evt.Fields)
+				case hotkey.EventChordTimeout:
+					verboseEmit("chord_timeout", nil)
+				}
 			},
 			Logger: logger,
 		}, listener)
@@ -342,17 +379,20 @@ func runStart(stdout, stderr io.Writer) error {
 				logger.Printf("focus %q (PID %d) failed: %v", name, pid, focusErr)
 			} else {
 				logger.Printf("focused %q (PID %d)", name, pid)
+				verboseEmit("app_focused", map[string]string{"name": name, "pid": strconv.Itoa(pid)})
 			}
 			return pid, nil
 		}
 		result, launchErr := exec.Launch(app)
 		if launchErr != nil {
+			verboseEmit("app_launch_failed", map[string]string{"name": name, "error": launchErr.Error()})
 			if trayProvider != nil {
 				trayProvider.NotifyError("Launch Failed", fmt.Sprintf("%s: %v", name, launchErr))
 			}
 			return 0, launchErr
 		}
 		logger.Printf("launched %q (PID %d)", name, result.PID)
+		verboseEmit("app_launched", map[string]string{"name": name, "pid": strconv.Itoa(result.PID)})
 		apiSrv.State().SetLaunched(name)
 		go launcher.PollReadiness(ctx, app, apiSrv.State(), exec, logger)
 		return result.PID, nil
@@ -637,7 +677,7 @@ func buildChords(apps []registry.AppEntry) []hotkey.Chord {
 // already running (attempting bring-to-front if so), and launches it
 // via the executor. It updates the API state tracker on success and
 // sends a tray notification on failure.
-func launchApp(ctx context.Context, exec launcher.Executor, reg *registry.Registry, apiSrv *api.Server, logger *log.Logger, name string, trayProv tray.Provider) {
+func launchApp(ctx context.Context, exec launcher.Executor, reg *registry.Registry, apiSrv *api.Server, logger *log.Logger, name string, trayProv tray.Provider, verboseEmit func(string, map[string]string)) {
 	if reg == nil {
 		logger.Printf("launch %q: registry not loaded", name)
 		return
@@ -655,9 +695,16 @@ func launchApp(ctx context.Context, exec launcher.Executor, reg *registry.Regist
 			logger.Printf("focus %q (PID %d) failed: %v", name, pid, err)
 		} else {
 			logger.Printf("focused %q (PID %d)", name, pid)
+			verboseEmit("app_focused", map[string]string{"name": name, "pid": strconv.Itoa(pid)})
 		}
 		return
 	}
+
+	verboseEmit("app_launching", map[string]string{
+		"name":    name,
+		"command": app.Command,
+		"env":     app.Environment,
+	})
 
 	result, err := exec.Launch(app)
 	if err != nil {
@@ -665,6 +712,7 @@ func launchApp(ctx context.Context, exec launcher.Executor, reg *registry.Regist
 		// Record detailed error on app state for diagnostic visibility.
 		errMsg := fmt.Sprintf("command=%q env=%s: %v", app.Command, app.Environment, err)
 		apiSrv.State().SetError(name, errMsg)
+		verboseEmit("app_launch_failed", map[string]string{"name": name, "error": err.Error()})
 		if trayProv != nil {
 			trayProv.NotifyError("Launch Failed", fmt.Sprintf("%s: %v", name, err))
 		}
@@ -672,6 +720,7 @@ func launchApp(ctx context.Context, exec launcher.Executor, reg *registry.Regist
 	}
 
 	logger.Printf("launched %q (PID %d)", name, result.PID)
+	verboseEmit("app_launched", map[string]string{"name": name, "pid": strconv.Itoa(result.PID)})
 	apiSrv.State().SetLaunched(name)
 	go launcher.PollReadiness(ctx, app, apiSrv.State(), exec, logger)
 }

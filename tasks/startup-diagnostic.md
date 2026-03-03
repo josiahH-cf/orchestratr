@@ -6,8 +6,8 @@
 ## Status
 
 - Total: 5
-- Complete: 3
-- Remaining: 2
+- Complete: 4
+- Remaining: 1
 
 ## Task List
 
@@ -37,7 +37,7 @@
 - **Files:** `internal/hotkey/engine.go`, `internal/hotkey/engine_test.go`, `cmd/orchestratr/main.go`
 - **Done when:** Unmatched chords are logged at debug level with the chord character; `orchestratr start --verbose` streams structured events to stderr (leader pressed, chord received, app launching/launched/focused, launch failed, ready pass/fail, config reloaded)
 - **Criteria covered:** "Unmatched chords are logged at debug level", "`orchestratr start --verbose` streams events to stderr"
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ### Task 5: Web GUI Error Badge
 

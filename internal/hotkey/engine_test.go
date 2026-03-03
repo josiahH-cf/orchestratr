@@ -1,8 +1,10 @@
 package hotkey
 
 import (
+	"bytes"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -717,5 +719,297 @@ func TestEngine_SwapChords_DuplicateRejected(t *testing.T) {
 	e.mu.RUnlock()
 	if !hasE {
 		t.Error("original chord 'e' should be preserved after failed swap")
+	}
+}
+
+func TestEngine_OnEvent_LeaderPressed(t *testing.T) {
+	listener := newTestListener()
+	leader := Key{Modifiers: ModCtrl, Code: "space"}
+
+	var mu sync.Mutex
+	var events []EngineEvent
+
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 2000,
+		Chords:         []Chord{{Key: Key{Code: "e"}, Action: "espansr"}},
+		OnAction:       func(string) {},
+		OnEvent: func(evt EngineEvent) {
+			mu.Lock()
+			events = append(events, evt)
+			mu.Unlock()
+		},
+		Logger: testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer e.Stop()
+
+	time.Sleep(20 * time.Millisecond)
+
+	listener.inject(leader, true)
+	time.Sleep(50 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(events) == 0 {
+		t.Fatal("expected at least one event for leader key press")
+	}
+	if events[0].Type != EventLeaderPressed {
+		t.Errorf("event type = %q, want %q", events[0].Type, EventLeaderPressed)
+	}
+}
+
+func TestEngine_OnEvent_ChordMatched(t *testing.T) {
+	listener := newTestListener()
+	leader := Key{Modifiers: ModCtrl, Code: "space"}
+	chordE := Key{Code: "e"}
+
+	var mu sync.Mutex
+	var events []EngineEvent
+	dispatches := make(chan string, 1)
+
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 2000,
+		Chords:         []Chord{{Key: chordE, Action: "espansr"}},
+		OnAction: func(action string) {
+			dispatches <- action
+		},
+		OnEvent: func(evt EngineEvent) {
+			mu.Lock()
+			events = append(events, evt)
+			mu.Unlock()
+		},
+		Logger: testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer e.Stop()
+
+	time.Sleep(20 * time.Millisecond)
+
+	listener.inject(leader, true)
+	time.Sleep(20 * time.Millisecond)
+	listener.inject(chordE, true)
+
+	select {
+	case <-dispatches:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for dispatch")
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Should have: leader_pressed, chord_received (with matched=true)
+	var hasLeader, hasChord bool
+	for _, evt := range events {
+		if evt.Type == EventLeaderPressed {
+			hasLeader = true
+		}
+		if evt.Type == EventChordReceived {
+			hasChord = true
+			if evt.Fields["chord"] != "e" {
+				t.Errorf("chord field = %q, want %q", evt.Fields["chord"], "e")
+			}
+			if evt.Fields["action"] != "espansr" {
+				t.Errorf("action field = %q, want %q", evt.Fields["action"], "espansr")
+			}
+			if evt.Fields["matched"] != "true" {
+				t.Errorf("matched field = %q, want %q", evt.Fields["matched"], "true")
+			}
+		}
+	}
+	if !hasLeader {
+		t.Error("expected leader_pressed event")
+	}
+	if !hasChord {
+		t.Error("expected chord_received event")
+	}
+}
+
+func TestEngine_OnEvent_ChordUnmatched(t *testing.T) {
+	listener := newTestListener()
+	leader := Key{Modifiers: ModCtrl, Code: "space"}
+
+	var mu sync.Mutex
+	var events []EngineEvent
+
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 2000,
+		Chords:         []Chord{{Key: Key{Code: "e"}, Action: "espansr"}},
+		OnAction:       func(string) {},
+		OnEvent: func(evt EngineEvent) {
+			mu.Lock()
+			events = append(events, evt)
+			mu.Unlock()
+		},
+		Logger: testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer e.Stop()
+
+	time.Sleep(20 * time.Millisecond)
+
+	listener.inject(leader, true)
+	time.Sleep(20 * time.Millisecond)
+	listener.inject(Key{Code: "z"}, true)
+	time.Sleep(50 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	var hasUnmatched bool
+	for _, evt := range events {
+		if evt.Type == EventChordReceived && evt.Fields["matched"] == "false" {
+			hasUnmatched = true
+			if evt.Fields["chord"] != "z" {
+				t.Errorf("chord field = %q, want %q", evt.Fields["chord"], "z")
+			}
+		}
+	}
+	if !hasUnmatched {
+		t.Error("expected unmatched chord_received event")
+	}
+}
+
+func TestEngine_OnEvent_Timeout(t *testing.T) {
+	listener := newTestListener()
+	leader := Key{Modifiers: ModCtrl, Code: "space"}
+
+	var mu sync.Mutex
+	var events []EngineEvent
+
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 100,
+		Chords:         []Chord{{Key: Key{Code: "e"}, Action: "espansr"}},
+		OnAction:       func(string) {},
+		OnEvent: func(evt EngineEvent) {
+			mu.Lock()
+			events = append(events, evt)
+			mu.Unlock()
+		},
+		Logger: testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer e.Stop()
+
+	time.Sleep(20 * time.Millisecond)
+
+	listener.inject(leader, true)
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	var hasTimeout bool
+	for _, evt := range events {
+		if evt.Type == EventChordTimeout {
+			hasTimeout = true
+		}
+	}
+	if !hasTimeout {
+		t.Error("expected chord_timeout event")
+	}
+}
+
+func TestEngine_UnmatchedChord_DebugLog(t *testing.T) {
+	listener := newTestListener()
+	leader := Key{Modifiers: ModCtrl, Code: "space"}
+
+	var buf bytes.Buffer
+	logger := log.New(&buf, "hotkey: ", 0)
+
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 2000,
+		Chords:         []Chord{{Key: Key{Code: "e"}, Action: "espansr"}},
+		OnAction:       func(string) {},
+		Logger:         logger,
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer e.Stop()
+
+	time.Sleep(20 * time.Millisecond)
+
+	listener.inject(leader, true)
+	time.Sleep(20 * time.Millisecond)
+	listener.inject(Key{Code: "z"}, true)
+	time.Sleep(50 * time.Millisecond)
+
+	output := buf.String()
+	if !strings.Contains(output, "[DEBUG]") {
+		t.Errorf("log output should contain [DEBUG] prefix for unmatched chord, got: %q", output)
+	}
+	if !strings.Contains(output, "z") {
+		t.Errorf("log output should contain chord character 'z', got: %q", output)
+	}
+}
+
+func TestEngine_OnEvent_NilIsOK(t *testing.T) {
+	// OnEvent is optional — nil should not panic.
+	listener := newTestListener()
+	leader := Key{Modifiers: ModCtrl, Code: "space"}
+
+	e, err := NewEngine(EngineConfig{
+		LeaderKey:      "ctrl+space",
+		ChordTimeoutMs: 2000,
+		Chords:         []Chord{{Key: Key{Code: "e"}, Action: "espansr"}},
+		OnAction:       func(string) {},
+		OnEvent:        nil, // explicitly nil
+		Logger:         testLogger(),
+	}, listener)
+	if err != nil {
+		t.Fatalf("NewEngine error: %v", err)
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer e.Stop()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// These should not panic even with nil OnEvent.
+	listener.inject(leader, true)
+	time.Sleep(20 * time.Millisecond)
+	listener.inject(Key{Code: "z"}, true)
+	time.Sleep(50 * time.Millisecond)
+
+	if e.State() != StateIdle {
+		t.Errorf("state = %v, want idle", e.State())
 	}
 }
