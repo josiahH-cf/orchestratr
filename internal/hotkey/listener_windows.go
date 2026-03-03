@@ -14,7 +14,13 @@ import (
 // Win32 API constants not defined in golang.org/x/sys/windows.
 const (
 	_HWND_MESSAGE = ^uintptr(2) // (HWND)-3 — message-only window parent
-	_HOTKEY_ID    = 1            // ID for our single RegisterHotKey call
+	_HOTKEY_ID    = 1           // ID for our single RegisterHotKey call
+
+	// Custom window messages for cross-thread communication between
+	// the engine goroutine and the Win32 message pump thread.
+	_WM_APP_GRAB    = 0x8000 + 1 // request keyboard hook install
+	_WM_APP_UNGRAB  = 0x8000 + 2 // request keyboard hook removal
+	_WM_APP_HOOKEVT = 0x8000 + 3 // wake pump to drain hook events
 )
 
 var (
@@ -25,6 +31,7 @@ var (
 	procUnregisterHotKey    = user32.NewProc("UnregisterHotKey")
 	procGetMessageW         = user32.NewProc("GetMessageW")
 	procPostThreadMessageW  = user32.NewProc("PostThreadMessageW")
+	procPostMessageW        = user32.NewProc("PostMessageW")
 	procSetWindowsHookExW   = user32.NewProc("SetWindowsHookExW")
 	procUnhookWindowsHookEx = user32.NewProc("UnhookWindowsHookEx")
 	procCallNextHookEx      = user32.NewProc("CallNextHookEx")
@@ -67,7 +74,7 @@ type _WNDCLASSEXW struct {
 	HbrBackground uintptr
 	LpszMenuName  *uint16
 	LpszClassName *uint16
-	HIconSm      uintptr
+	HIconSm       uintptr
 }
 
 // windowsListener implements the Listener interface on Windows using
@@ -79,9 +86,9 @@ type windowsListener struct {
 	leaderVK  uint32
 	leaderMod uint32
 
-	hwnd     uintptr        // hidden message-only window
-	threadID uint32         // message pump thread ID
-	hookH    uintptr        // WH_KEYBOARD_LL hook handle
+	hwnd     uintptr         // hidden message-only window
+	threadID uint32          // message pump thread ID
+	hookH    uintptr         // WH_KEYBOARD_LL hook handle
 	events   chan<- KeyEvent // output channel
 	stopCh   chan struct{}
 	stopped  bool
@@ -89,6 +96,12 @@ type windowsListener struct {
 	// hookEvents receives key events captured by the low-level hook
 	// callback. Buffered so the hook proc returns quickly.
 	hookEvents chan KeyEvent
+
+	// grabDone and ungrabDone synchronize GrabKeyboard /
+	// UngrabKeyboard with the message pump thread, which is the
+	// only thread allowed to install / remove the LL hook.
+	grabDone   chan error
+	ungrabDone chan struct{}
 }
 
 // newWindowsListener creates a new windowsListener. The listener does
@@ -97,6 +110,8 @@ func newWindowsListener() *windowsListener {
 	return &windowsListener{
 		stopCh:     make(chan struct{}),
 		hookEvents: make(chan KeyEvent, 64),
+		grabDone:   make(chan error, 1),
+		ungrabDone: make(chan struct{}, 1),
 	}
 }
 
@@ -193,9 +208,13 @@ func (l *windowsListener) Start(events chan<- KeyEvent) error {
 }
 
 // messagePump runs the Win32 GetMessage loop. It processes WM_HOTKEY
-// messages and forwards hook-captured events. It exits when WM_QUIT
-// is received.
+// messages, handles cross-thread hook management requests, and
+// forwards hook-captured events. It exits when WM_QUIT is received.
+// Deferred cleanup releases the hotkey, hook, and window on the
+// correct OS thread.
 func (l *windowsListener) messagePump() {
+	defer l.cleanup()
+
 	var msg _MSG
 	for {
 		// GetMessage blocks until a message is available. Returns 0
@@ -220,6 +239,19 @@ func (l *windowsListener) messagePump() {
 			if ch != nil {
 				ch <- KeyEvent{Key: l.leader, Pressed: true}
 			}
+
+		case _WM_APP_GRAB:
+			// Engine requested keyboard hook installation.
+			l.grabDone <- l.installHook()
+
+		case _WM_APP_UNGRAB:
+			// Engine requested keyboard hook removal.
+			l.uninstallHook()
+			l.ungrabDone <- struct{}{}
+
+		case _WM_APP_HOOKEVT:
+			// Wake message from hook callback — just need to reach
+			// drainHookEvents below.
 		}
 
 		// Drain any hook events accumulated since the last pump
@@ -248,10 +280,43 @@ func (l *windowsListener) drainHookEvents() {
 	}
 }
 
-// GrabKeyboard installs a WH_KEYBOARD_LL hook to capture all keyboard
-// input during the chord-wait window. The hook is thread-local to the
-// message pump thread.
+// GrabKeyboard requests the message pump thread to install a
+// WH_KEYBOARD_LL hook. The hook must be installed on the pump thread
+// because Windows delivers LL hook callbacks on the installing thread,
+// and that thread must have an active message pump.
 func (l *windowsListener) GrabKeyboard() error {
+	l.mu.Lock()
+	tid := l.threadID
+	l.mu.Unlock()
+
+	if tid == 0 {
+		return fmt.Errorf("message pump not running")
+	}
+
+	// Drain any stale response from a previous call.
+	select {
+	case <-l.grabDone:
+	default:
+	}
+
+	ret, _, callErr := procPostThreadMessageW.Call(
+		uintptr(tid), uintptr(_WM_APP_GRAB), 0, 0,
+	)
+	if ret == 0 {
+		return fmt.Errorf("PostThreadMessage(WM_APP_GRAB) failed: %v", callErr)
+	}
+
+	select {
+	case grabErr := <-l.grabDone:
+		return grabErr
+	case <-l.stopCh:
+		return fmt.Errorf("listener stopped")
+	}
+}
+
+// installHook installs the WH_KEYBOARD_LL hook. Must be called on the
+// message pump thread.
+func (l *windowsListener) installHook() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -273,8 +338,37 @@ func (l *windowsListener) GrabKeyboard() error {
 	return nil
 }
 
-// UngrabKeyboard removes the WH_KEYBOARD_LL hook.
+// UngrabKeyboard requests the message pump thread to remove the
+// WH_KEYBOARD_LL hook. Blocks until the hook is removed or the
+// listener is stopped.
 func (l *windowsListener) UngrabKeyboard() {
+	l.mu.Lock()
+	tid := l.threadID
+	l.mu.Unlock()
+
+	if tid == 0 {
+		return
+	}
+
+	// Drain any stale response.
+	select {
+	case <-l.ungrabDone:
+	default:
+	}
+
+	procPostThreadMessageW.Call(
+		uintptr(tid), uintptr(_WM_APP_UNGRAB), 0, 0,
+	)
+
+	select {
+	case <-l.ungrabDone:
+	case <-l.stopCh:
+	}
+}
+
+// uninstallHook removes the WH_KEYBOARD_LL hook. Must be called on
+// the message pump thread.
+func (l *windowsListener) uninstallHook() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -284,9 +378,10 @@ func (l *windowsListener) UngrabKeyboard() {
 	}
 }
 
-// Stop releases all Win32 resources: unregisters the hotkey, removes
-// the hook, destroys the window, and posts WM_QUIT to exit the
-// message pump. Safe to call multiple times.
+// Stop posts WM_QUIT to the message pump thread and signals Start to
+// return. The pump thread's deferred cleanup releases the hotkey,
+// hook, and window on the correct OS thread. Safe to call multiple
+// times.
 func (l *windowsListener) Stop() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -296,20 +391,9 @@ func (l *windowsListener) Stop() error {
 	}
 	l.stopped = true
 
-	// Remove the hook if active.
-	if l.hookH != 0 {
-		procUnhookWindowsHookEx.Call(l.hookH)
-		l.hookH = 0
-	}
-
-	// Unregister the hotkey and destroy the window.
-	if l.hwnd != 0 {
-		procUnregisterHotKey.Call(l.hwnd, _HOTKEY_ID)
-		procDestroyWindow.Call(l.hwnd)
-		l.hwnd = 0
-	}
-
 	// Post WM_QUIT to the message pump thread to exit GetMessage.
+	// The pump's deferred cleanup() handles resource release on the
+	// correct thread.
 	if l.threadID != 0 {
 		procPostThreadMessageW.Call(
 			uintptr(l.threadID),
@@ -329,12 +413,36 @@ func (l *windowsListener) Stop() error {
 	return nil
 }
 
+// cleanup releases Win32 resources. It must be called on the message
+// pump thread (via defer in messagePump) so that DestroyWindow is
+// invoked from the same thread that created the window.
+func (l *windowsListener) cleanup() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.hookH != 0 {
+		procUnhookWindowsHookEx.Call(l.hookH)
+		l.hookH = 0
+	}
+	if l.hwnd != 0 {
+		procUnregisterHotKey.Call(l.hwnd, _HOTKEY_ID)
+		procDestroyWindow.Call(l.hwnd)
+		l.hwnd = 0
+	}
+}
+
 // llKeyboardProc is the WH_KEYBOARD_LL callback. It captures keydown
-// events and sends them to the hookEvents channel. The callback must
-// return quickly to avoid the OS removing the hook.
-func (l *windowsListener) llKeyboardProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
+// events and sends them to the hookEvents channel, then posts a wake
+// message so the pump drains them promptly. The callback must return
+// quickly to avoid the OS removing the hook.
+//
+// lParam is declared as unsafe.Pointer (rather than uintptr) so that
+// the conversion does not trigger a go-vet unsafeptr warning. The
+// Win32 API guarantees lParam is a valid pointer to KBDLLHOOKSTRUCT
+// for the callback's lifetime.
+func (l *windowsListener) llKeyboardProc(nCode int, wParam uintptr, lParam unsafe.Pointer) uintptr {
 	if nCode >= 0 && (uint32(wParam) == _WM_KEYDOWN || uint32(wParam) == _WM_SYSKEYDOWN) {
-		kb := (*_KBDLLHOOKSTRUCT)(unsafe.Pointer(lParam))
+		kb := (*_KBDLLHOOKSTRUCT)(lParam)
 		code := vkToKeyCode(kb.VKCode)
 		if code != "" {
 			evt := KeyEvent{
@@ -350,8 +458,14 @@ func (l *windowsListener) llKeyboardProc(nCode int, wParam uintptr, lParam uintp
 		}
 	}
 
+	// Post a wake message so the pump's drainHookEvents runs
+	// promptly after this callback returns. Without this, the pump
+	// would block in GetMessage until an unrelated message arrives,
+	// delaying chord delivery to the engine.
+	procPostMessageW.Call(l.hwnd, uintptr(_WM_APP_HOOKEVT), 0, 0)
+
 	// Always call the next hook in the chain.
-	ret, _, _ := procCallNextHookEx.Call(0, uintptr(nCode), wParam, lParam)
+	ret, _, _ := procCallNextHookEx.Call(0, uintptr(nCode), wParam, uintptr(lParam))
 	return ret
 }
 
@@ -373,11 +487,11 @@ func (l *windowsListener) createMessageWindow() (uintptr, error) {
 	// RegisterClassEx may fail if already registered — that's OK.
 
 	hwnd, _, createErr := procCreateWindowExW.Call(
-		0, // dwExStyle
+		0,                                  // dwExStyle
 		uintptr(unsafe.Pointer(className)), // lpClassName
-		0, // lpWindowName
-		0, // dwStyle
-		0, 0, 0, 0, // x, y, w, h
+		0,                                  // lpWindowName
+		0,                                  // dwStyle
+		0, 0, 0, 0,                         // x, y, w, h
 		_HWND_MESSAGE, // hWndParent (message-only)
 		0,             // hMenu
 		0,             // hInstance

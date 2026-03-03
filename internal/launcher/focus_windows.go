@@ -21,8 +21,8 @@ var (
 	procAttachThreadInput        = user32DLL.NewProc("AttachThreadInput")
 	procIsWindowVisible          = user32DLL.NewProc("IsWindowVisible")
 
-	kernel32DLL                  = windows.NewLazySystemDLL("kernel32.dll")
-	procGetCurrentThreadIdFocus  = kernel32DLL.NewProc("GetCurrentThreadId")
+	kernel32DLL                 = windows.NewLazySystemDLL("kernel32.dll")
+	procGetCurrentThreadIdFocus = kernel32DLL.NewProc("GetCurrentThreadId")
 )
 
 const (
@@ -64,10 +64,7 @@ func FocusWindow(pid int) error {
 // findWindowByPID enumerates all top-level windows and returns the
 // first visible window handle owned by the given process ID.
 func findWindowByPID(targetPID uint32) (uintptr, error) {
-	type result struct {
-		hwnd uintptr
-	}
-	var found result
+	var found uintptr
 
 	cb := windows.NewCallback(func(hwnd uintptr, lParam uintptr) uintptr {
 		// Check if window is visible.
@@ -79,21 +76,21 @@ func findWindowByPID(targetPID uint32) (uintptr, error) {
 		var windowPID uint32
 		procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&windowPID)))
 		if windowPID == targetPID {
-			// Store result via the lParam pointer.
-			r := (*result)(unsafe.Pointer(lParam))
-			r.hwnd = hwnd
+			// Store result via closure capture — avoids an
+			// unsafe.Pointer conversion from lParam.
+			found = hwnd
 			return 0 // stop enumeration
 		}
 		return 1 // continue
 	})
 
-	procEnumWindows.Call(cb, uintptr(unsafe.Pointer(&found)))
+	procEnumWindows.Call(cb, 0)
 
-	if found.hwnd == 0 {
+	if found == 0 {
 		return 0, fmt.Errorf("%w: no visible window found for PID %d", ErrFocusNotSupported, targetPID)
 	}
 
-	return found.hwnd, nil
+	return found, nil
 }
 
 // focusWithAttach uses the AttachThreadInput technique to steal the
@@ -115,7 +112,7 @@ func focusWithAttach(hwnd uintptr) error {
 
 	if fgThread != ourThread {
 		// Attach our input to the foreground thread.
-		procAttachThreadInput.Call(ourThread, fgThread, 1) // TRUE
+		procAttachThreadInput.Call(ourThread, fgThread, 1)       // TRUE
 		defer procAttachThreadInput.Call(ourThread, fgThread, 0) // FALSE
 	}
 

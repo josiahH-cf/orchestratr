@@ -46,12 +46,12 @@ const (
 
 // Win32 message constants.
 const (
-	_WM_HOTKEY     uint32 = 0x0312
-	_WM_QUIT       uint32 = 0x0012
-	_WM_DESTROY    uint32 = 0x0002
-	_WH_KEYBOARD_LL       = 13
-	_WM_KEYDOWN    uint32 = 0x0100
-	_WM_SYSKEYDOWN uint32 = 0x0104
+	_WM_HOTKEY      uint32 = 0x0312
+	_WM_QUIT        uint32 = 0x0012
+	_WM_DESTROY     uint32 = 0x0002
+	_WH_KEYBOARD_LL        = 13
+	_WM_KEYDOWN     uint32 = 0x0100
+	_WM_SYSKEYDOWN  uint32 = 0x0104
 )
 
 // keyToVK converts an internal key code string to a Win32 Virtual-Key code.
