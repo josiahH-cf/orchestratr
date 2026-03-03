@@ -118,17 +118,17 @@ For apps that should self-register, implement a connector module. The full proto
 # Is the daemon running?
 orchestratr status
 
+# Full diagnostic
+orchestratr doctor
+
 # See registered apps and their source
 orchestratr list
 
+# Watch events in real-time
+orchestratr start --verbose
+
 # Check a specific manifest
 cat ~/.config/orchestratr/apps.d/myapp.yml
-
-# Full diagnostic (planned — see specs/startup-diagnostic.md)
-# orchestratr doctor
-
-# Watch events in real-time (planned — see specs/startup-diagnostic.md)
-# orchestratr start --verbose
 ```
 
 ## Architecture
