@@ -31,3 +31,7 @@ jobs:
 
       - name: Build
         run: go build -o orchestratr ./cmd/orchestratr
+
+      - name: Cross-compile for Windows
+        if: matrix.os == 'ubuntu-latest'
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o orchestratr.exe ./cmd/orchestratr

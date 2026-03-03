@@ -12,10 +12,13 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v0.
 LDFLAGS  = -X main.Version=$(VERSION)
 BINARY   = orchestratr
 
-.PHONY: build install test lint fmt clean
+.PHONY: build build-windows install test lint fmt clean
 
 build:
 	CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/orchestratr
+
+build-windows:
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BINARY).exe ./cmd/orchestratr
 
 install:
 	CGO_ENABLED=1 go install -ldflags "$(LDFLAGS)" ./cmd/orchestratr
@@ -30,4 +33,4 @@ fmt:
 	gofmt -w .
 
 clean:
-	rm -f $(BINARY)
+	rm -f $(BINARY) $(BINARY).exe
