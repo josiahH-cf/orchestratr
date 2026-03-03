@@ -13,6 +13,8 @@ type AppState struct {
 	Ready      bool       `json:"ready"`
 	LaunchedAt *time.Time `json:"launched_at,omitempty"`
 	ReadyAt    *time.Time `json:"ready_at,omitempty"`
+	Error      string     `json:"error,omitempty"`
+	ErrorAt    *time.Time `json:"error_at,omitempty"`
 }
 
 // StateTracker tracks the lifecycle state of all registered apps.
@@ -45,6 +47,9 @@ func (st *StateTracker) SetLaunched(name string) {
 	// Reset ready state on re-launch.
 	state.Ready = false
 	state.ReadyAt = nil
+	// Clear any previous error on re-launch.
+	state.Error = ""
+	state.ErrorAt = nil
 }
 
 // SetReady marks an app as ready. Creates the entry if it does not
@@ -91,6 +96,38 @@ func (st *StateTracker) SetStopped(name string) {
 	state.Ready = false
 	state.LaunchedAt = nil
 	state.ReadyAt = nil
+	state.Error = ""
+	state.ErrorAt = nil
+}
+
+// SetError records an error message on an app's state. Creates the
+// entry if it does not exist.
+func (st *StateTracker) SetError(name, msg string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	now := time.Now()
+	state, ok := st.apps[name]
+	if !ok {
+		state = &AppState{Name: name}
+		st.apps[name] = state
+	}
+	state.Error = msg
+	state.ErrorAt = &now
+}
+
+// ClearError removes the error state from an app. It is a no-op for
+// unknown apps.
+func (st *StateTracker) ClearError(name string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	state, ok := st.apps[name]
+	if !ok {
+		return
+	}
+	state.Error = ""
+	state.ErrorAt = nil
 }
 
 // Sync removes state entries for apps not in the provided name list.

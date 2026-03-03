@@ -165,6 +165,161 @@ func TestStateTracker_Sync_EmptyList(t *testing.T) {
 	}
 }
 
+func TestStateTracker_SetError(t *testing.T) {
+	st := NewStateTracker()
+	st.SetLaunched("testapp")
+	st.SetError("testapp", "exec: command not found")
+
+	state := st.Get("testapp")
+	if state == nil {
+		t.Fatal("expected state for testapp, got nil")
+	}
+	if state.Error != "exec: command not found" {
+		t.Errorf("Error = %q, want %q", state.Error, "exec: command not found")
+	}
+	if state.ErrorAt == nil {
+		t.Error("expected ErrorAt to be set")
+	}
+	// App should still be in launched state (error is supplementary info).
+	if !state.Launched {
+		t.Error("expected Launched = true")
+	}
+}
+
+func TestStateTracker_SetError_CreatesEntry(t *testing.T) {
+	st := NewStateTracker()
+	// SetError on unknown app should create the entry.
+	st.SetError("newapp", "something failed")
+
+	state := st.Get("newapp")
+	if state == nil {
+		t.Fatal("expected state for newapp, got nil")
+	}
+	if state.Error != "something failed" {
+		t.Errorf("Error = %q, want %q", state.Error, "something failed")
+	}
+}
+
+func TestStateTracker_SetLaunched_ClearsError(t *testing.T) {
+	st := NewStateTracker()
+	st.SetLaunched("testapp")
+	st.SetError("testapp", "previous failure")
+
+	// Re-launch should clear the error.
+	st.SetLaunched("testapp")
+
+	state := st.Get("testapp")
+	if state == nil {
+		t.Fatal("expected state for testapp, got nil")
+	}
+	if state.Error != "" {
+		t.Errorf("Error = %q, want empty after re-launch", state.Error)
+	}
+	if state.ErrorAt != nil {
+		t.Error("expected ErrorAt = nil after re-launch")
+	}
+}
+
+func TestStateTracker_SetStopped_ClearsError(t *testing.T) {
+	st := NewStateTracker()
+	st.SetLaunched("testapp")
+	st.SetError("testapp", "some error")
+	st.SetStopped("testapp")
+
+	state := st.Get("testapp")
+	if state == nil {
+		t.Fatal("expected state for testapp, got nil")
+	}
+	if state.Error != "" {
+		t.Errorf("Error = %q, want empty after stop", state.Error)
+	}
+	if state.ErrorAt != nil {
+		t.Error("expected ErrorAt = nil after stop")
+	}
+}
+
+func TestStateTracker_ClearError(t *testing.T) {
+	st := NewStateTracker()
+	st.SetLaunched("testapp")
+	st.SetError("testapp", "bad stuff")
+	st.ClearError("testapp")
+
+	state := st.Get("testapp")
+	if state == nil {
+		t.Fatal("expected state for testapp, got nil")
+	}
+	if state.Error != "" {
+		t.Errorf("Error = %q, want empty after ClearError", state.Error)
+	}
+	if state.ErrorAt != nil {
+		t.Error("expected ErrorAt = nil after ClearError")
+	}
+}
+
+func TestStateTracker_ClearError_Idempotent(t *testing.T) {
+	st := NewStateTracker()
+	// ClearError on unknown app should not panic.
+	st.ClearError("nonexistent")
+
+	// ClearError on app with no error should be a no-op.
+	st.SetLaunched("testapp")
+	st.ClearError("testapp")
+
+	state := st.Get("testapp")
+	if state.Error != "" {
+		t.Errorf("Error = %q, want empty", state.Error)
+	}
+}
+
+func TestStateTracker_ErrorInJSON(t *testing.T) {
+	st := NewStateTracker()
+	st.SetLaunched("testapp")
+	st.SetError("testapp", "exec failed")
+
+	state := st.Get("testapp")
+
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	if decoded["error"] != "exec failed" {
+		t.Errorf("JSON error = %v, want %q", decoded["error"], "exec failed")
+	}
+	if decoded["error_at"] == nil {
+		t.Error("expected error_at in JSON")
+	}
+}
+
+func TestStateTracker_NoErrorOmittedInJSON(t *testing.T) {
+	st := NewStateTracker()
+	st.SetLaunched("testapp")
+
+	state := st.Get("testapp")
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	// error and error_at should be omitted when empty.
+	if _, exists := decoded["error"]; exists {
+		t.Error("expected error to be omitted from JSON when empty")
+	}
+	if _, exists := decoded["error_at"]; exists {
+		t.Error("expected error_at to be omitted from JSON when empty")
+	}
+}
+
 func TestPostStopped_Success(t *testing.T) {
 	cfg := registry.Config{
 		Apps: []registry.AppEntry{
