@@ -22,20 +22,17 @@ import (
 // StatusNotifierItem protocol (pure Go — no CGo required).
 // On Windows it uses the Win32 Shell_NotifyIcon API.
 type SystrayProvider struct {
-	mu    sync.Mutex
-	state string
-	ready chan struct{}
-	done  chan struct{}
+	mu        sync.Mutex
+	state     string
+	setupDone bool // true after onReady has fired
+	ready     chan struct{}
+	done      chan struct{}
 
 	// callbacks registered by the daemon before Setup is called.
 	onPauseFn     func()
 	onResumeFn    func()
 	onQuitFn      func()
 	onConfigureFn func()
-
-	// notifyTitle and notifyMsg are set by NotifyError on Windows
-	// so the tray tooltip can be temporarily updated.
-	notifyMsg string
 
 	// injectable for tests.
 	runFn  func(onReady, onExit func()) // defaults to systray.Run
@@ -93,6 +90,7 @@ func (p *SystrayProvider) onReady() {
 
 	// Signal Setup to return.
 	p.mu.Lock()
+	p.setupDone = true
 	close(p.ready)
 	p.mu.Unlock()
 
@@ -153,9 +151,12 @@ func (p *SystrayProvider) onExit() {}
 func (p *SystrayProvider) SetState(state string) error {
 	p.mu.Lock()
 	p.state = state
+	active := p.setupDone
 	p.mu.Unlock()
 
-	systray.SetTooltip("orchestratr: " + state)
+	if active {
+		systray.SetTooltip("orchestratr: " + state)
+	}
 	return nil
 }
 
@@ -164,6 +165,7 @@ func (p *SystrayProvider) SetState(state string) error {
 func (p *SystrayProvider) Quit() {
 	p.mu.Lock()
 	done := p.done
+	p.setupDone = false
 	p.mu.Unlock()
 
 	if done == nil {
@@ -233,11 +235,21 @@ func (p *SystrayProvider) NotifyError(title, message string) {
 		).Run()
 
 	case "windows":
+		p.mu.Lock()
+		active := p.setupDone
+		p.mu.Unlock()
+		if !active {
+			return
+		}
 		// Temporarily flash the error in the tooltip, then restore.
 		go func() {
 			systray.SetTooltip("orchestratr ERROR: " + title + " — " + message)
 			time.Sleep(5 * time.Second)
 			p.mu.Lock()
+			if !p.setupDone {
+				p.mu.Unlock()
+				return // tray was quit during the sleep
+			}
 			prev := "orchestratr: " + p.state
 			p.mu.Unlock()
 			systray.SetTooltip(prev)

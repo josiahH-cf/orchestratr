@@ -1,6 +1,6 @@
 # Feature: Native System Tray
 
-**Status:** Not started
+**Status:** Implemented
 **Project:** orchestratr
 
 ## Description
@@ -67,15 +67,15 @@ The `-tags notray` build tag lets CI builds skip the CGo dependency without code
 
 ## Acceptance Criteria
 
-- [ ] On Linux with a desktop environment (DISPLAY or WAYLAND_DISPLAY set), `orchestratr start` displays a tray icon in the system notification area
-- [ ] On Windows, `orchestratr start` displays a tray icon in the taskbar notification area
-- [ ] The tray tooltip reflects the daemon state: "orchestratr: running" or "orchestratr: paused"
-- [ ] The tray context menu has Pause, Resume, Configure, and Quit items; clicking each fires the registered callback
-- [ ] Clicking Quit in the tray menu stops the daemon (equivalent to `orchestratr stop`)
-- [ ] `NotifyError` produces a visible desktop notification on Linux (via `notify-send`) and on Windows (via tooltip flash)
-- [ ] On Linux without DISPLAY or WAYLAND_DISPLAY (headless/CI), `NewPlatformProvider()` returns `HeadlessProvider` — no crash or missing binary
-- [ ] `go build ./...` succeeds without CGo when `-tags notray` is passed (Linux CI use case)
-- [ ] On Darwin, `NewPlatformProvider()` returns `HeadlessProvider` (stub, pending macOS platform layer)
+- [x] On Linux with a desktop environment (DISPLAY or WAYLAND_DISPLAY set), `orchestratr start` displays a tray icon in the system notification area
+- [x] On Windows, `orchestratr start` displays a tray icon in the taskbar notification area
+- [x] The tray tooltip reflects the daemon state: "orchestratr: running" or "orchestratr: paused"
+- [x] The tray context menu has Pause, Resume, Configure, and Quit items; clicking each fires the registered callback
+- [x] Clicking Quit in the tray menu stops the daemon (equivalent to `orchestratr stop`)
+- [x] `NotifyError` produces a visible desktop notification on Linux (via `notify-send`) and on Windows (via tooltip flash)
+- [x] On Linux without DISPLAY or WAYLAND_DISPLAY (headless/CI), `NewPlatformProvider()` returns `HeadlessProvider` — no crash or missing binary
+- [x] `go build ./...` succeeds without CGo when `-tags notray` is passed (Linux CI use case)
+- [x] On Darwin, `NewPlatformProvider()` returns `HeadlessProvider` (stub, pending macOS platform layer)
 
 ## Affected Areas
 
