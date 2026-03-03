@@ -286,6 +286,11 @@ func runStart(stdout, stderr io.Writer) error {
 	)
 	defer exec.StopAll()
 
+	// Create daemon-scoped context for cancellation of background
+	// goroutines (readiness polling, etc.).
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Build and start the hotkey engine.
 	if cfg != nil {
 		chords := buildChords(cfg.Apps)
@@ -296,7 +301,7 @@ func runStart(stdout, stderr io.Writer) error {
 			Chords:         chords,
 			OnAction: func(action string) {
 				logger.Printf("chord dispatched: %s", action)
-				launchApp(exec, reg, apiSrv, logger, action, trayProvider)
+				launchApp(ctx, exec, reg, apiSrv, logger, action, trayProvider)
 			},
 			Logger: logger,
 		}, listener)
@@ -345,12 +350,11 @@ func runStart(stdout, stderr io.Writer) error {
 		}
 		logger.Printf("launched %q (PID %d)", name, result.PID)
 		apiSrv.State().SetLaunched(name)
+		go launcher.PollReadiness(ctx, app, apiSrv.State(), exec, logger)
 		return result.PID, nil
 	})
 
 	// Wire tray callbacks now that daemon and engine are initialized.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Track the GUI server instance so it can be stopped on shutdown
 	// or when a new configure request arrives (OI-10).
@@ -629,7 +633,7 @@ func buildChords(apps []registry.AppEntry) []hotkey.Chord {
 // already running (attempting bring-to-front if so), and launches it
 // via the executor. It updates the API state tracker on success and
 // sends a tray notification on failure.
-func launchApp(exec launcher.Executor, reg *registry.Registry, apiSrv *api.Server, logger *log.Logger, name string, trayProv tray.Provider) {
+func launchApp(ctx context.Context, exec launcher.Executor, reg *registry.Registry, apiSrv *api.Server, logger *log.Logger, name string, trayProv tray.Provider) {
 	if reg == nil {
 		logger.Printf("launch %q: registry not loaded", name)
 		return
@@ -662,6 +666,7 @@ func launchApp(exec launcher.Executor, reg *registry.Registry, apiSrv *api.Serve
 
 	logger.Printf("launched %q (PID %d)", name, result.PID)
 	apiSrv.State().SetLaunched(name)
+	go launcher.PollReadiness(ctx, app, apiSrv.State(), exec, logger)
 }
 
 // runTrigger sends a trigger request to the running daemon's API.
