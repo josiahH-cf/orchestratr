@@ -362,9 +362,16 @@ func (s *Server) handleLaunch(w http.ResponseWriter, _ *http.Request, name strin
 	}
 	pid, err := fn(name)
 	if err != nil {
+		// Record error on app state for diagnostic visibility.
+		msg := err.Error()
+		if app, ok := s.reg.FindByName(name); ok {
+			msg = fmt.Sprintf("command=%q env=%s: %s", app.Command, app.Environment, err.Error())
+		}
+		s.state.SetError(name, msg)
 		writeError(w, http.StatusInternalServerError, "launch_failed", err.Error())
 		return
 	}
+	s.state.SetLaunched(name)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "app": name, "pid": pid})
 }
 
@@ -433,9 +440,13 @@ func (s *Server) handleTrigger(w http.ResponseWriter, r *http.Request) {
 		}
 		pid, err := fn(app.Name)
 		if err != nil {
+			// Record error on app state for diagnostic visibility.
+			msg := fmt.Sprintf("command=%q env=%s: %s", app.Command, app.Environment, err.Error())
+			s.state.SetError(app.Name, msg)
 			writeError(w, http.StatusInternalServerError, "launch_failed", err.Error())
 			return
 		}
+		s.state.SetLaunched(app.Name)
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "app": app.Name, "pid": pid})
 		return
 	}

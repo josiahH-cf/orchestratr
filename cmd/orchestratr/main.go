@@ -658,6 +658,9 @@ func launchApp(ctx context.Context, exec launcher.Executor, reg *registry.Regist
 	result, err := exec.Launch(app)
 	if err != nil {
 		logger.Printf("launch %q failed: %v", name, err)
+		// Record detailed error on app state for diagnostic visibility.
+		errMsg := fmt.Sprintf("command=%q env=%s: %v", app.Command, app.Environment, err)
+		apiSrv.State().SetError(name, errMsg)
 		if trayProv != nil {
 			trayProv.NotifyError("Launch Failed", fmt.Sprintf("%s: %v", name, err))
 		}

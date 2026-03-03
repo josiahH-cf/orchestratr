@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -418,5 +419,215 @@ func TestPostTrigger_WrongMethod(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestPostLaunch_FailureSetsErrorState(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{
+			{Name: "myapp", Chord: "m", Command: "myapp --gui", Environment: "native"},
+		},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "v0.0.1", reg, nil)
+
+	s.SetLaunchFunc(func(name string) (int, error) {
+		return 0, fmt.Errorf("exec: myapp: not found")
+	})
+	handler := s.Handler()
+
+	// POST /apps/myapp/launch — expect failure.
+	req := httptest.NewRequest("POST", "/apps/myapp/launch", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("launch status = %d, want %d; body: %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+
+	// GET /apps/myapp/state — error should be populated.
+	req2 := httptest.NewRequest("GET", "/apps/myapp/state", nil)
+	req2.RemoteAddr = "127.0.0.1:54321"
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("state status = %d, want %d", rec2.Code, http.StatusOK)
+	}
+
+	var state AppState
+	if err := json.NewDecoder(rec2.Body).Decode(&state); err != nil {
+		t.Fatalf("decoding state: %v", err)
+	}
+
+	if state.Error == "" {
+		t.Error("state.Error should be non-empty after launch failure")
+	}
+	if !strings.Contains(state.Error, "myapp") {
+		t.Errorf("state.Error = %q, want it to contain app info", state.Error)
+	}
+	if !strings.Contains(state.Error, "not found") {
+		t.Errorf("state.Error = %q, want it to contain the error message", state.Error)
+	}
+	if state.ErrorAt == nil {
+		t.Error("state.ErrorAt should be non-nil after launch failure")
+	}
+}
+
+func TestPostLaunch_SuccessAfterFailureClearsError(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{
+			{Name: "myapp", Chord: "m", Command: "myapp --gui", Environment: "native"},
+		},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "v0.0.1", reg, nil)
+
+	callCount := 0
+	s.SetLaunchFunc(func(name string) (int, error) {
+		callCount++
+		if callCount == 1 {
+			return 0, fmt.Errorf("exec: myapp: not found")
+		}
+		return 42, nil
+	})
+	handler := s.Handler()
+
+	// First launch fails.
+	req := httptest.NewRequest("POST", "/apps/myapp/launch", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("first launch status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	// Verify error state is set.
+	stateAfterFail := s.State().Get("myapp")
+	if stateAfterFail == nil || stateAfterFail.Error == "" {
+		t.Fatal("error state should be set after failed launch")
+	}
+
+	// Second launch succeeds.
+	req2 := httptest.NewRequest("POST", "/apps/myapp/launch", nil)
+	req2.RemoteAddr = "127.0.0.1:54321"
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second launch status = %d, want %d; body: %s", rec2.Code, http.StatusOK, rec2.Body.String())
+	}
+
+	// GET /apps/myapp/state — error should be cleared.
+	req3 := httptest.NewRequest("GET", "/apps/myapp/state", nil)
+	req3.RemoteAddr = "127.0.0.1:54321"
+	rec3 := httptest.NewRecorder()
+	handler.ServeHTTP(rec3, req3)
+
+	var state AppState
+	if err := json.NewDecoder(rec3.Body).Decode(&state); err != nil {
+		t.Fatalf("decoding state: %v", err)
+	}
+
+	if state.Error != "" {
+		t.Errorf("state.Error = %q, want empty after successful relaunch", state.Error)
+	}
+	if state.ErrorAt != nil {
+		t.Errorf("state.ErrorAt = %v, want nil after successful relaunch", state.ErrorAt)
+	}
+}
+
+func TestPostTrigger_WithChord_FailureSetsErrorState(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{
+			{Name: "calculator", Chord: "c", Command: "calc --ui", Environment: "wsl"},
+		},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "v0.0.1", reg, nil)
+
+	s.SetLaunchFunc(func(name string) (int, error) {
+		return 0, fmt.Errorf("wsl.exe: command not found")
+	})
+	handler := s.Handler()
+
+	// Trigger with chord that fails.
+	body := strings.NewReader(`{"chord":"c"}`)
+	req := httptest.NewRequest("POST", "/trigger", body)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("trigger status = %d, want %d; body: %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+
+	// Verify error state includes details.
+	state := s.State().Get("calculator")
+	if state == nil {
+		t.Fatal("state should exist for calculator after failed trigger")
+	}
+	if state.Error == "" {
+		t.Error("state.Error should be non-empty after failed trigger launch")
+	}
+	if !strings.Contains(state.Error, "calc") {
+		t.Errorf("state.Error = %q, want it to contain command info", state.Error)
+	}
+	if !strings.Contains(state.Error, "wsl") {
+		t.Errorf("state.Error = %q, want it to contain environment info", state.Error)
+	}
+	if state.ErrorAt == nil {
+		t.Error("state.ErrorAt should be non-nil after failed trigger launch")
+	}
+}
+
+func TestPostLaunch_ErrorStateIncludesDetails(t *testing.T) {
+	cfg := registry.Config{
+		Apps: []registry.AppEntry{
+			{Name: "editor", Chord: "v", Command: "vim --server", Environment: "wsl"},
+		},
+	}
+	reg := registry.NewRegistry(cfg)
+	s := NewServer(0, "v0.0.1", reg, nil)
+
+	s.SetLaunchFunc(func(name string) (int, error) {
+		return 0, fmt.Errorf("exec: vim: not found")
+	})
+	handler := s.Handler()
+
+	req := httptest.NewRequest("POST", "/apps/editor/launch", nil)
+	req.RemoteAddr = "127.0.0.1:54321"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	// GET state via JSON.
+	req2 := httptest.NewRequest("GET", "/apps/editor/state", nil)
+	req2.RemoteAddr = "127.0.0.1:54321"
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	// Parse JSON and verify error and error_at fields.
+	var raw map[string]any
+	if err := json.NewDecoder(rec2.Body).Decode(&raw); err != nil {
+		t.Fatalf("decoding state JSON: %v", err)
+	}
+	errField, ok := raw["error"]
+	if !ok || errField == "" {
+		t.Fatal("JSON response should have non-empty 'error' field")
+	}
+	errStr := errField.(string)
+	if !strings.Contains(errStr, "vim --server") {
+		t.Errorf("error = %q, want it to contain command attempted", errStr)
+	}
+	if !strings.Contains(errStr, "wsl") {
+		t.Errorf("error = %q, want it to contain environment", errStr)
+	}
+	if !strings.Contains(errStr, "not found") {
+		t.Errorf("error = %q, want it to contain error message", errStr)
+	}
+	if _, ok := raw["error_at"]; !ok {
+		t.Error("JSON response should have 'error_at' field")
 	}
 }
