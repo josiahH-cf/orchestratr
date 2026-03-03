@@ -78,6 +78,7 @@
   .status-badge.stopped { background: rgba(243,139,168,0.15); color: var(--danger); }
   .status-badge.launched { background: rgba(250,179,135,0.15); color: var(--warn); }
   .status-badge.ready { background: rgba(166,227,161,0.15); color: var(--success); }
+  .status-badge.error { background: rgba(243,139,168,0.25); color: var(--danger); cursor: help; }
   .source-badge {
     display: inline-block; padding: 2px 8px; border-radius: 12px;
     font-size: 0.75rem; font-weight: 500;
@@ -302,7 +303,11 @@ function renderTable() {
   tbody.innerHTML = apps.map((app, i) => {
     const state = daemonStates[app.name];
     let status = 'stopped';
-    if (state && state.launched) {
+    let errorMsg = '';
+    if (state && state.error) {
+      status = 'error';
+      errorMsg = state.error;
+    } else if (state && state.launched) {
       status = state.ready ? 'ready' : 'launched';
     }
     const source = app.source || 'config';
@@ -319,12 +324,11 @@ function renderTable() {
       <td><code>${esc(app.command)}</code></td>
       <td>${esc(app.environment || 'native')}</td>
       <td><span class="${sourceClass}">${esc(sourceLabel)}</span></td>
-      <td><span class="status-badge ${status}">${status}</span></td>
+      <td><span class="status-badge ${status}"${errorMsg ? ` title="${esc(errorMsg)}"` : ''}>${status}</span></td>
       <td class="actions">
         ${actions}
       </td>
     </tr>`;
-  }).join('');
   }).join('');
 }
 

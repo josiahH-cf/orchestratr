@@ -6,8 +6,8 @@
 ## Status
 
 - Total: 5
-- Complete: 4
-- Remaining: 1
+- Complete: 5
+- Remaining: 0
 
 ## Task List
 
@@ -44,7 +44,7 @@
 - **Files:** `internal/gui/static/index.html`
 - **Done when:** GUI shows a red `error` status badge when an app has an error; tooltip displays the error message; existing status badges still work
 - **Criteria covered:** "Web GUI shows an `error` status badge (red) with the error message in a tooltip"
-- **Status:** [ ] Not started
+- **Status:** [x] Complete
 
 ## Test Strategy
 
