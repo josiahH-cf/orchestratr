@@ -1,6 +1,6 @@
 # Feature: End-to-End Hotkey Launch Pipeline
 
-**Status:** Not started
+**Status:** Implemented
 **Project:** orchestratr (primary), templatr, espansr
 **Size:** L — cross-project, 7 tasks across 3 repos
 
