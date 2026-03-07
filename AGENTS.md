@@ -1,163 +1,92 @@
-# Project
+# AGENTS
 
-- Project name: orchestratr
-- Description: A system-wide hotkey launcher and app orchestrator. Background daemon with leader-key chords, localhost HTTP API, and cross-environment launching.
-- Primary language/framework: Go (single binary, cross-platform)
-- Scope: Hotkey registration, app lifecycle management, IPC via HTTP, system tray, cross-env launching (WSL2 ↔ Windows)
-- Non-goals: cloud APIs, multi-tenant, mobile/web, plugin system, package manager distribution (v1)
+Canonical entrypoint for all coding agents. Read this first, then follow links to detailed references.
 
-# Build
+## Overview
 
-- Install: `go install ./...` or `make install`
-- Build: `go build -o orchestratr ./cmd/orchestratr`
-- Test (all): `go test ./...`
-- Test (single): `go test ./internal/hotkey -run TestLeaderKeyCapture`
-- Lint: `golangci-lint run ./...`
-- Format: `gofmt -w .`
-- Type-check: Go compiler handles this natively
+`[PROJECT-SPECIFIC]` — Filled during Compass phase (Phase 2).
 
-# Architecture
+## Workflow Phases
 
-- `cmd/orchestratr/` — Main binary entrypoint (daemon start, CLI commands)
-- `internal/daemon/` — Background daemon lifecycle, single-instance lock, signal handling
-- `internal/hotkey/` — Platform-specific hotkey capture (evdev, CGEventTap, RegisterHotKey, Wayland)
-- `internal/registry/` — App registry: YAML config parsing, hot-reload, app state tracking
-- `internal/api/` — Localhost HTTP API server (JSON, port 9876)
-- `internal/launcher/` — App launching, PID tracking, bring-to-front, cross-env (WSL2)
-- `internal/tray/` — System tray icon, minimal status menu
-- `internal/gui/` — Management GUI (config editor, app table) — lightweight, infrequent use
-- `configs/` — Default/example YAML configs
+The project lifecycle follows 9 phases plus a parallel Bug Track.
 
-# Feature Lifecycle
+### Phase 1 — Scaffold Import
+- **Entry:** Run `initialization.md` meta-prompt
+- **Gate:** Empty or new project repository → **Output:** Scaffold files placed → **Next:** Phase 2
 
-1. **Ideate** — Human files a GitHub issue or describes the feature
-2. **Scope** — Agent explores the codebase and writes `/specs/[feature-name].md` using the template
-3. **Plan** — Agent decomposes the spec into `/tasks/[feature-name].md` (2–5 tasks)
-4. **Test** — Agent writes failing tests for each acceptance criterion
-5. **Implement** — Agent makes tests pass, one task per session
-6. **Review** — A different agent or human reviews the PR
+### Phase 2 — Compass
+- **Entry:** Claude: `/compass` · Copilot: `phase-2-compass.prompt.md` · Codex: `.codex/AGENTS.md`
+- **Gate:** Scaffold present → **Output:** `.specify/constitution.md` populated (themes addressed, ambiguities documented) → **Next:** Phase 3
 
-GitHub Issues are the human intake mechanism. Agents read issues but do not create, edit, or close them.
-All agent-driven planning happens in local files (`/specs/`, `/tasks/`, `/decisions/`).
+### Phase 3 — Define Features
+- **Entry:** Claude: `/define-features` · Copilot: `phase-3-define-features.prompt.md`
+- **Gate:** Constitution complete → **Output:** Feature specs in `/specs/` → **Next:** Phase 4
 
-# Communication
+### Phase 4 — Scaffold Project
+- **Entry:** Claude: `/scaffold` · Copilot: `phase-4-scaffold.prompt.md`
+- **Gate:** Feature specs exist → **Output:** Architecture plan, `workflow/COMMANDS.md` finalized (no code) → **Next:** Phase 5
 
-- Ask questions as plain text in chat — never use interactive UI elements (buttons, toggles, quick-picks)
+### Phase 5 — Fine-tune Plan
+- **Entry:** Claude: `/fine-tune` · Copilot: `phase-5-fine-tune.prompt.md`
+- **Gate:** Scaffold plan exists → **Output:** `/tasks/` files with AC, model, branch → **Next:** Phase 6
 
-# Conventions
+### Phase 6 — Code
+- **Entry:** Claude: `/implement` · Copilot: `phase-6-implement.prompt.md`
+- `/implement` is **direct single-feature execution** — use when you know which feature to build
+- **Session mode:** `/build-session` — sustained multi-feature implementation session
+- **Gate:** Task file + pre-impl tests exist → **Output:** Passing code on feature branch → **Next:** Phase 7
 
-- Functions and variables: Go standard (`camelCase` local, `PascalCase` exported)
-- Files: lowercase with underscores where needed (e.g., `hotkey_linux.go`)
-- Build tags for platform: `//go:build linux`, `//go:build darwin`, `//go:build windows`
-- Prefer explicit error handling — `if err != nil { return err }` over silent swallow
-- No dead code — remove unused imports, variables, and functions
-- Every exported function has a doc comment
-- No hardcoded secrets, URLs, or environment-specific values
-- Use `internal/` for all non-entrypoint packages (enforced by Go)
+### Phase 7 — Test
+- **Entry:** Claude: `/test` · Copilot: `phase-7-test.prompt.md`
+- **Gate:** Implementation on feature branch → **Output:** Test results, bug log → **Next:** Phase 7a
 
-# Cross-Platform Strategy
+### Phase 7a — Review Bot (Default Merge Path)
+- **Entry:** Claude: `/review-bot` · Copilot: `phase-7a-review-bot.prompt.md`
+- **Automatic:** `/continue` dispatches here after tests pass — no manual trigger needed
+- **On-demand:** `/review-bot` to run manually at any time
+- **Gate:** All ACs pass → **Output:** Auto-merged PR (on PASS) or findings file at `/reviews/[feature-id]-bot-findings.md` (on FAIL) → **Next:** Phase 8 or next feature (on PASS); back to Phase 6 (on FAIL)
+- **Agent:** `.github/agents/review-bot.agent.md` — prefer a different model than the implementer (advisory)
 
-- Platform-specific code isolated in files with build tags: `*_linux.go`, `*_darwin.go`, `*_windows.go`
-- Shared interface per platform concern:
-  - `hotkey.Listener` — platform-specific hotkey capture
-  - `launcher.Executor` — platform-specific process launch and bring-to-front
-  - `tray.Provider` — platform-specific system tray
-- WSL2 bridging: daemon runs on Windows host; launches WSL apps via `wsl.exe -d <distro> -- <cmd>`
+### Phase 7b — Review & Ship (Manual Fallback)
+- **Entry:** Claude: `/review-session` · Copilot: `phase-7d-review-session.prompt.md`
+- **Optional:** `/cross-review` — second-opinion review from a different agent
+- **Use when:** Manual human review is desired (security-critical, architectural changes)
+- **Gate:** All ACs pass → **Output:** Approved PR merged → **Next:** Phase 8 or next feature
 
-# Testing
+### Phase 8 — Maintain
+- **Entry:** Claude: `/maintain` · Copilot: `phase-8-maintain.prompt.md`
+- **Gate:** Feature shipped → **Output:** Updated docs, compliance report → **Next:** Phase 9 or next cycle
 
-- Write tests before implementation
-- Place tests alongside source files using `_test.go` naming
-- Use table-driven tests where multiple inputs test the same function
-- Each acceptance criterion requires at least one test
-- Do not modify existing tests to accommodate new code — fix the implementation
-- Run the full test suite before committing
-- Tests must be deterministic — no flaky tests in the main suite
-- Platform-specific tests use build tags; CI matrix covers Linux, macOS, Windows
+### Phase 9 — Operationalize
+- **Entry:** Claude: `/operationalize` · Copilot: `phase-9-operationalize.prompt.md`
+- **Gate:** Maintenance level selected → **Output:** `.github/maintenance-config.yml` + generated GitHub Actions workflows → **Next:** Ongoing (re-enterable)
+- **Interview:** Covers lint schedule, docs compliance, release publishing, dependency monitoring, security scanning, notification routing, automation depth
+- **Re-entry:** Run `/operationalize` again to update existing config — no duplication
 
-# Dependencies
+### Bug Track (Parallel)
+- **Entry:** Claude: `/bug` · Copilot: `phase-7b-bug.prompt.md` — invoke from any phase
+- **Fix flow:** `/bugfix` — reproduce → diagnose → fix → verify → PR
 
-- Minimize external dependencies — Go stdlib covers HTTP, JSON, YAML (with a small library), and OS interaction
-- Hotkey capture will need platform-specific C interop (cgo) or syscall wrappers
-- System tray: evaluate `getlantern/systray` or `fyne.io/systray`
-- GUI: evaluate `fyne.io/fyne` for the minimal management interface
-- YAML: `gopkg.in/yaml.v3`
+### Orchestrator
+- **Entry:** Claude: `/continue` · Copilot: `phase-10-continue.prompt.md`
+- `/continue` is the **orchestrator**, not a direct implementation command. It reads `workflow/STATE.json`, determines the next action (including bug-routing), dispatches to the appropriate phase command, and auto-advances through phases 2–9. At Phase 6 it delegates to `/implement`.
+- See `workflow/ORCHESTRATOR.md` for the loop contract
 
-# Planning
+## Quick Reference
 
-- Features with more than 3 implementation steps require a written plan
-- Plans go in `/tasks/[feature-name].md` or as an ExecPlan per `/.codex/PLANS.md`
-- Plans are living documents — update progress, decisions, and surprises as work proceeds
-- A plan that cannot fit in 5 tasks indicates the feature should be split. Call this out.
-- Small-fix fast path: if a change is <= 3 files and has no behavior change, a full spec/task lifecycle is optional; still document intent in the PR and run lint + relevant tests.
-
-# Commits
-
-- One logical change per commit
-- Present-tense imperative subject line, under 72 characters
-- Reference the spec or task file in the commit body when applicable
-- Commit after each completed task, not after all tasks
-
-# Branches
-
-- Branch from the latest target branch immediately before starting work
-- One feature per branch
-- Delete after merge
-- Never commit directly to the target branch
-- Naming: `[type]/[slug]` (e.g., `feat/hotkey-engine`, `fix/pid-tracking`). Include the issue number if one exists: `feat/42-hotkey-engine`
-
-# Worktrees
-
-- Use git worktrees for concurrent features across agents
-- Worktree root: `.trees/[branch-name]/`
-- Each worktree is isolated: agents operate only within their assigned worktree
-- Artifacts (specs, tasks, decisions) live in the main worktree and are shared read-only
-- Never switch branches inside a worktree — create a new one
-
-# Pull Requests
-
-- Link to the spec file
-- Diff under 300 lines; if larger, split the feature
-- All CI checks pass before requesting review
-- PR description states: what changed, why, how to verify
-
-# Review
-
-- Reviewable in under 15 minutes
-- Tests cover every acceptance criterion
-- No unrelated changes in the diff
-- Cross-agent review encouraged: use a different model than the one that wrote the code
-
-# Security
-
-- No secrets in code or instruction files
-- Use environment variables for all credentials
-- Sanitize all external input
-- Log security-relevant events
-- HTTP API binds to localhost only (127.0.0.1) — never 0.0.0.0
-
-# Agent Boundaries
-
-- Agents do not create or modify GitHub issues, labels, milestones, or projects
-- Agents do not push to main/master directly
-- Agents do not modify CI/CD workflows without explicit human instruction
-- Agents work within local files: specs, tasks, decisions, and source code
-
-# App Connector Protocol
-
-- orchestratr discovers apps via the **drop-in directory** (`apps.d/`) — see `docs/CONNECTOR.md`
-- Apps write a flat YAML manifest to `~/.config/orchestratr/apps.d/<appname>.yml` (or platform equivalent)
-- Manifest schema matches `AppEntry` exactly: `name`, `chord`, `command`, `environment`, `description`, `ready_cmd`, `ready_timeout_ms`
-- `config.yml` entries take precedence over `apps.d/` entries on conflict
-- Full protocol reference: workspace-level `/specs/orchestratr-app-connector-protocol.md`
-
-Key files for the connector:
-- `internal/registry/loader.go` — `apps.d/` scanning and merge logic
-- `internal/registry/watcher.go` — file watcher for `apps.d/` directory
-- `internal/registry/validate.go` — merge-conflict validation
-- `docs/CONNECTOR.md` — developer-facing connector guide
-
-# Related Projects
-
-- **espansr** — Espanso template manager (Python/PyQt6). Connector: `espansr/integrations/orchestratr.py`, spec: `espansr/specs/manifest-schema-alignment.md`
-- **templatr** — Local-model prompt optimizer (Python/PyQt6). Connector: `templatr/integrations/orchestratr.py`, spec: `templatr/specs/orchestratr-connector.md`
+| Section | Reference |
+|---------|-----------|
+| Advisory routing hints, branches, concurrency | `workflow/ROUTING.md` |
+| Advisory tier model and context-sensitive guidance | `workflow/ORCHESTRATOR.md → Context-Sensitive Advisory Guidance` |
+| Concurrency safety, drift detection | `workflow/CONCURRENCY.md` |
+| Build/test/lint commands, code conventions | `workflow/COMMANDS.md` |
+| Boundaries (best practices, review points, avoid patterns), bug tracking | `workflow/BOUNDARIES.md` |
+| Lifecycle phases (detailed) | `workflow/LIFECYCLE.md` |
+| Phase execution gates | `workflow/PLAYBOOK.md` |
+| Artifact ownership & contracts | `workflow/FILE_CONTRACTS.md` |
+| Failure routing & escalation | `workflow/FAILURE_ROUTING.md` |
+| Autonomous loop contract | `workflow/ORCHESTRATOR.md` |
+| Policy changes | `governance/CHANGE_PROTOCOL.md` |
+| Policy validation | `governance/POLICY_TESTS.md` |
+| File registry | `governance/REGISTRY.md` |
+| Orchestrator state | `workflow/STATE.json` |

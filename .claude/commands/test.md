@@ -1,26 +1,47 @@
+<!-- role: derived | canonical-source: meta-prompts/phase-7-test.md -->
 <!-- generated-from-metaprompt -->
-You are writing tests for a feature that does not exist yet. Do not write implementation code.
+# Phase 7 — Test & Mark Changes
 
-Read the task file at: $ARGUMENTS
-Read the linked spec file referenced in that task file.
-Read the project's conventions file (AGENTS.md) for testing patterns.
-Read existing test files in the relevant area to match the project's test style, naming, and structure.
+**Objective:** Verify feature behavior against acceptance criteria in explicit test modes (`pre` and `post`), log failures as bugs, and confirm behavior matches spec.
 
-For each acceptance criterion in the spec, write at least one test that:
-- Asserts the expected behavior described in the criterion.
-- Will FAIL right now because the feature has not been implemented.
-- Uses a descriptive name that states the expected behavior in plain language.
+**Trigger:** `pre` mode runs before Phase 6 implementation. `post` mode runs after Phase 6 implementation.
 
-Rules:
-- Every acceptance criterion must have at least one corresponding test. No criterion left untested.
-- Tests must fail. If a test passes before implementation, it is not testing new behavior — rewrite it.
-- Do not write any implementation code. Not even stubs, helpers, or fixtures that implement feature logic.
-- Follow the existing test patterns in this codebase exactly. Match file location, naming, imports, and structure.
-- All pre-existing tests must still pass. Your new tests are the only ones that should fail.
+**Entry commands:**
+- Claude: `/test`
+- Copilot: `phase-7-test.prompt.md`
 
-After writing tests:
-1. Run the full test suite.
-2. Confirm: new tests fail, all existing tests pass.
-3. Commit the test files with a message referencing the spec (example: "Add failing tests for [feature-name] per /specs/[feature-name].md").
+---
 
-After committing, state: "Failing tests committed. Label the issue status:tests-written. Next phase: Implement (Phase 4). Start in a fresh context window. Run one session per task."
+## What Happens
+
+### Pre-Implementation Mode (`/test pre`)
+1. Read spec ACs and existing test patterns
+2. Write at least one test per AC using EARS/GWT format
+3. Tests must fail before implementation exists
+4. Include UI/visual tests where applicable
+5. Commit failing tests
+
+### Post-Implementation Mode (`/test post`)
+1. Run full test suite
+2. Compare results against each AC — mark pass/fail
+3. Log failures as bugs via `/bug`
+4. If behavior deviated from spec but tests pass, update spec notes
+5. Verify no regressions
+
+## Gate
+
+- `pre` mode: failing tests exist for every AC
+- `post` mode: all acceptance criteria verified (pass or documented failure)
+- Bug log reviewed — no blocking bugs remain
+- No regressions in existing tests
+
+## Output
+
+- Test results mapped to ACs
+- Bug log entries for any failures
+- Updated spec if behavior deviated
+
+## See Also
+
+- Bug logging: `/bug` command
+- Bug fixing: `/bugfix` command

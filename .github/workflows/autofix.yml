@@ -1,0 +1,45 @@
+name: "Auto-Fix — CI Failure Recovery"
+on:
+  workflow_run:
+    workflows: ["CI"]  # [PROJECT-SPECIFIC] — Name of your CI workflow
+    types: [completed]
+
+concurrency:
+  group: autofix-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  auto-fix:
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_branch != 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+
+      # [PROJECT-SPECIFIC] — Add your setup steps
+      # - uses: actions/setup-node@v4
+      # - run: npm ci
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            CI failed on branch ${{ github.event.workflow_run.head_branch }}.
+            Analyze the CI failure logs and fix the issue.
+            Keep changes small and surgical — fix only what broke.
+            Read AGENTS.md for project conventions.
+            Do NOT make unrelated changes.
+          claude_args: "--max-turns 3"
+          # Safety: limited turns prevent runaway sessions
+
+      # Note: The Claude Code Action will push fixes directly.
+      # Human review is still required before merge (branch protection).
+      # Max 3 turns prevents cost explosion.
+      # This workflow only triggers on non-main branches.

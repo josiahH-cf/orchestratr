@@ -1,30 +1,51 @@
+# Copilot Coding Agent — Setup Steps
+# Runs before every Copilot agent session to install dependencies and configure environment.
 name: "Copilot Setup Steps"
+on: workflow_dispatch
 
-on:
-  workflow_dispatch:
-  push:
-    paths:
-      - .github/workflows/copilot-setup-steps.yml
-  pull_request:
-    paths:
-      - .github/workflows/copilot-setup-steps.yml
+concurrency:
+  group: copilot-setup
+  cancel-in-progress: true
 
 jobs:
-  copilot-setup-steps:
+  setup:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.23"
+      # [PROJECT-SPECIFIC] — Replace with your project's install command
+      # Example for Node.js:
+      # - uses: actions/setup-node@v4
+      #   with:
+      #     node-version: '20'
+      # - run: npm ci
+
+      # Example for Python:
+      # - uses: actions/setup-python@v5
+      #   with:
+      #     python-version: '3.12'
+      # - run: pip install -r requirements.txt
+
+      - name: Verify setup
+        run: echo "Environment ready for Copilot Coding Agent"
 
       - name: Install dependencies
-        run: go mod download
-
-      - name: Validate environment
         run: |
-          golangci-lint run ./...
-          go test ./...
+          set -euo pipefail
+          eval "$INSTALL_CMD"
+
+      - name: Build project
+        run: |
+          set -euo pipefail
+          eval "$BUILD_CMD"
+
+      - name: Lint project
+        run: |
+          set -euo pipefail
+          eval "$LINT_CMD"
+
+      - name: Run tests
+        run: |
+          set -euo pipefail
+          eval "$TEST_CMD"

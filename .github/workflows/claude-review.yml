@@ -1,0 +1,40 @@
+name: "Claude Review — Mention Triggered"
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@claude'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this PR against the project's acceptance criteria.
+            Read AGENTS.md for project conventions.
+            Read workflow/BOUNDARIES.md for behavioral rules.
+            For each acceptance criterion, verify:
+            1. A corresponding test exists
+            2. The test is meaningful (not a tautology)
+            3. The implementation matches the spec
+            Output a PASS/FAIL verdict per criterion.
+          claude_args: "--max-turns 5"

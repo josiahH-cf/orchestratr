@@ -6,10 +6,14 @@
       "Edit",
       "MultiEdit",
       "Bash(git *)",
-      "Bash(go *)",
-      "Bash(gofmt *)",
-      "Bash(golangci-lint *)",
-      "Bash(make *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(yarn *)",
+      "Bash(pnpm *)",
+      "Bash(bun *)",
+      "Bash(pip *)",
+      "Bash(python *)",
+      "Bash(node *)",
       "Bash(cat *)",
       "Bash(ls *)",
       "Bash(find *)",
@@ -21,29 +25,20 @@
       "Bash(mkdir *)",
       "Bash(cp *)",
       "Bash(mv *)"
-    ],
-    "deny": [
-      "Bash(rm -rf *)",
-      "Bash(git push --force*)",
-      "Bash(git push -f*)",
-      "Bash(git checkout main)",
-      "Bash(git checkout master)",
-      "Bash(chmod 777*)",
-      "Bash(curl * | bash*)",
-      "Bash(wget * | bash*)"
     ]
   },
   "hooks": {
     "PostToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
-        "command": "gofmt -w \"$FILEPATH\" 2>/dev/null; true"
+        "command": "if command -v npx >/dev/null 2>&1 && [ -f package.json ]; then npx prettier --write \"$FILEPATH\" 2>/dev/null || true; fi",
+        "timeout": 15000
       }
     ],
     "Stop": [
       {
         "matcher": "",
-        "command": "golangci-lint run --fix ./... 2>/dev/null; true"
+        "command": "echo 'Remember: run your test suite before ending this session. Configure your test command in AGENTS.md Core Commands.'"
       }
     ]
   }

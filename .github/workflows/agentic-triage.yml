@@ -1,0 +1,31 @@
+name: "Agentic Triage — Weekly Issue Review"
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 9:00 UTC
+  workflow_dispatch:  # Manual trigger for testing
+
+concurrency:
+  group: agentic-triage
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review all open issues without labels.
+            For each issue:
+            1. Suggest appropriate labels (type:feature, type:bug, size:S/M/L)
+            2. Write a one-paragraph summary comment
+            3. If the issue matches a spec in /specs/, note the connection
+            Do NOT modify code. Do NOT close issues. Read-only triage only.
+            Read AGENTS.md for project conventions and label taxonomy.
+          claude_args: "--max-turns 3"

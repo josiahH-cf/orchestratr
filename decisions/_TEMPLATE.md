@@ -2,7 +2,8 @@
 
 **Date:** [YYYY-MM-DD]
 **Status:** Accepted | Superseded by [NNNN]
-**Feature:** /specs/[feature-name].md
+**Feature:** /specs/[feature-id]-[slug].md
+**Trigger:** [what failed or what ambiguity required this decision]
 
 ## Context
 
@@ -10,8 +11,8 @@
 
 ## Options
 
-1. **[Option A]** — [tradeoff]
-2. **[Option B]** — [tradeoff]
+1. **[Option A]**  -  [tradeoff]
+2. **[Option B]**  -  [tradeoff]
 
 ## Decision
 
@@ -20,3 +21,11 @@
 ## Consequences
 
 <!-- What follows, positive and negative. -->
+
+## Rollback Impact
+
+<!-- What must be reverted if this decision is changed later. -->
+
+## Validation Follow-up
+
+<!-- Which tests/checks confirm this decision is safe. -->
