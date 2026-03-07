@@ -1,0 +1,53 @@
+# =============================================================================
+# .aiignore — Files excluded from AI agent context and editing
+# =============================================================================
+
+# Secrets and credentials
+.env
+.env.*
+.env.local
+.env.production
+config/secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Governance files (require change protocol — see governance/CHANGE_PROTOCOL.md)
+governance/
+
+# Orchestrator state (managed by /continue only)
+workflow/STATE.json
+
+# Generated and build artifacts
+node_modules/
+dist/
+build/
+.next/
+__pycache__/
+*.pyc
+.pytest_cache/
+coverage/
+
+# Git internals
+.git/
+
+# Worktree isolation directories
+.trees/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Lock files (read-only reference, don't modify)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+poetry.lock
+Pipfile.lock

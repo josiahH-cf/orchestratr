@@ -1,10 +1,11 @@
+<!-- role: derived | canonical-source: meta-prompts/phase-7d-review-and-ship.md -->
 <!-- generated-from-metaprompt -->
 You are reviewing completed feature branches and preparing them for merge. You will process one feature at a time through review, and if it passes, create its pull request.
 
 For each feature, work through the following:
 
-PHASE 5 — REVIEW
-Read the spec at /specs/[feature-name].md, the task file at /tasks/[feature-name].md, and the full diff of the feature branch against the target branch.
+REVIEW PHASE
+Read the spec at /specs/[feature-id]-[slug].md, the task file at /tasks/[feature-id]-[slug].md, and the full diff of the feature branch against the target branch.
 
 Evaluate every item below. For each, report PASS or FAIL with specific evidence.
 
@@ -27,27 +28,27 @@ Produce a summary:
 - Code quality issues: [list or "None"]
 
 If ALL checks pass:
-- State: "Review PASSED for [feature-name]."
-- Proceed to Phase 6 below.
+- State: "Review PASSED for [feature-id]-[slug]."
+- Proceed to PR Create below.
 
 If ANY check fails:
 - List each failure with the specific fix needed.
-- State: "Review FAILED for [feature-name]. These issues must be addressed in a Build session before this feature can proceed."
+- State: "Review FAILED for [feature-id]-[slug]. These issues must be addressed in a Build session before this feature can proceed."
 - Do not create a PR. Move to the next feature if there are more to review.
 
-PHASE 5b — CROSS-REVIEW (when applicable)
-If you are a different agent or model than the one that built AND initially reviewed this feature, your Phase 5 evaluation above serves as the cross-review. State this explicitly in the report.
+CROSS-REVIEW (when applicable)
+If you are a different agent or model than the one that built AND initially reviewed this feature, your review evaluation above serves as the cross-review. State this explicitly in the report.
 
 If you are the same agent that built the feature, note: "Self-reviewed only. Cross-review by a different agent is recommended before merge."
 
-PHASE 6 — PR CREATE (only for features that passed review)
-Read the PR template at /.github/pull_request_template.md if it exists.
+PR CREATE (only for features that passed review)
+Read the PR template at /.github/PULL_REQUEST_TEMPLATE.md if it exists.
 Read the full diff of the feature branch against the target branch.
 
 Produce the pull request:
 - Title: concise imperative summary
 - What: one sentence
-- Why: link to /specs/[feature-name].md
+- Why: link to /specs/[feature-id]-[slug].md
 - Changes: logical changes grouped by area
 - Testing checklist: check each box honestly — if any cannot be checked, leave it unchecked and explain
 - Non-code checklist: same — honest checks only
@@ -56,38 +57,15 @@ Produce the pull request:
 - If the diff exceeds 300 lines, state this and recommend splitting before opening.
 
 Open the PR against the target branch.
-State: "PR created for [feature-name]. Ready for human review (Phase 7)."
+State: "PR created for [feature-id]-[slug]. Ready for human review."
 
 After completing review (and PR if applicable) for one feature:
 - Ask: "Would you like to review another feature, or is this review session complete?"
 
-If another feature: ask for the next feature name and repeat from Phase 5.
+If another feature: ask for the next feature name and repeat from the Review phase.
 If complete: produce a session summary:
   - Features reviewed
   - Status of each: PR created / failed review (with reason)
   - Any features needing a Build session to address failures
 
-State: "All features that passed review have open PRs. Remaining items need Build sessions to address review failures. Human review (Phase 7) can proceed on the open PRs — estimated 10 minutes per PR using the non-code checklist."
-PLAN (interactive, batch)
-  Phase 0: Ideate → Issue            ↺ repeat per idea
-  Phase 1: Scope  → Spec               ↰ split back to Phase 0 if criteria > 7
-  Phase 2: Plan   → Tasks / ExecPlan   ↰ split back to Phase 1 if tasks > 5
-  → "Plan another?" loop
-
-BUILD (autonomous, one feature per session)
-  Phase 3: Test   → Committed failing tests
-  Phase 4: Implement → Committed code   ↺ repeat per task
-  → Resume in fresh session if context constrained
-
-REVIEW & SHIP (batch)
-  Phase 5/5b: Review → PASS/FAIL report   ↰ fail sends back to Build
-  Phase 6: PR Create (on pass)
-  → "Review another?" loop
-
-HUMAN (Phase 7)
-  Merge via non-code checklist → Done
-/specs/[name].md        produced by: Plan     consumed by: Build, Review & Ship
-/tasks/[name].md        produced by: Plan     consumed by: Build, Review & Ship
-/decisions/[NNNN].md    produced by: Build    consumed by: future sessions
-ExecPlan                produced by: Plan     consumed by: Build (long-run only)
-PR                      produced by: Review   consumed by: Human
+State: "All features that passed review have open PRs. Remaining items need Build sessions to address review failures. Human review can proceed on the open PRs — estimated 10 minutes per PR using the non-code checklist."

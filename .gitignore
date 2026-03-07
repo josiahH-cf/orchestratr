@@ -1,29 +1,14 @@
-# Build
-/orchestratr
-*.exe
-/dist/
+# NOTE: These contents should be appended to the existing file.
 
-# Go
-vendor/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Agent personal config
+# Agent personal overrides
 CLAUDE.local.md
 
 # Claude session artifacts
 .claude/plans/
 
-# Local agent permission overrides
-.claude/settings.local.json
-
-# Worktrees
+# Worktree scratch directories
 .trees/
+
+# Local agent permission overrides
+.vscode/
+.claude/settings.local.json

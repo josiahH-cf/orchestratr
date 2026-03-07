@@ -1,36 +1,52 @@
+<!-- role: derived | canonical-source: meta-prompts/phase-6-code.md -->
 <!-- generated-from-metaprompt -->
-You are implementing one task from a planned feature. Only one.
+# Phase 6 — Code
 
-Read the task file at: $ARGUMENTS
-Read the project's conventions file (AGENTS.md).
+**Objective:** Implement features following TDD from fine-tuned specs and task files. Tests exist first — make them pass.
 
-Orient before writing:
-1. Identify the next task in the task file that is marked "Not started."
-2. Read the test file(s) that cover this task's acceptance criteria.
-3. Read the source files this task will modify.
-4. Confirm you understand what the tests expect before writing any code.
+`/implement` is **direct single-feature execution**. It does not manage state transitions, select the next action, or advance phases — that is the orchestrator's job (`/continue`). Use `/implement` when you know which feature to build. Use `/continue` when you want the orchestrator to determine the next action (which may invoke `/implement` at Phase 6).
 
-Implement ONLY this one task. Not the next one. Not a partial start on another.
+**Trigger:** Phase 5 complete (`/tasks/[feature-id]-[slug].md` exists with ordered tasks, model assignment, and branches).
 
-Rules:
-- Make the failing tests for this task pass.
-- Follow existing code patterns. Read the surrounding code before writing.
-- Do not modify any existing tests. If a test seems wrong, the implementation is wrong — not the test.
-- Do not add functionality beyond what this task specifies. No bonus features, no preemptive refactors.
-- Do not change files outside the scope listed in this task's "Files" field.
-- If you encounter a non-obvious decision, write it to /decisions/[NNNN]-[slug].md before proceeding. Use the next available number.
+**Entry commands:**
+- Claude: `/implement`
+- Copilot: `phase-6-implement.prompt.md`
 
-After implementation:
-1. Run the full test suite — not just this task's tests.
-2. If unrelated tests break, fix the regression without modifying those tests.
-3. Commit with a message referencing the task (example: "Implement [task name] for [feature-name] — task 2/4").
-4. Update the task file: mark this task's status as [x] Complete. Update the Status counts (Complete, Remaining).
-5. Append to the Session Log: date, what was completed, any blockers or decisions made.
+---
 
-After committing, check the task file:
+## What Happens
 
-- If MORE tasks remain with status "Not started":
-  State: "Task [N] complete. [M] tasks remaining. End this session. Start a fresh context window and run Phase 4 again with the same task file path."
+1. Confirm `/test pre` has created failing tests for this feature
+2. Orient: read task file, failing tests, source files
+3. Verify constitution alignment before implementing
+4. Implement one task at a time — make failing tests pass
+5. Follow existing code patterns
+6. Log bugs via `/bug` — don't silently work around them
+7. Update spec before any unplanned decision
+8. Commit per task on the assigned branch
 
-- If ALL tasks are now complete:
-  State: "All tasks complete. Label the issue status:implemented. Next phase: Review (Phase 5). Start in a fresh context window. For best results, use a different agent or model for review."
+## Gate
+
+- Pre-implementation tests exist for every AC (from `/test pre`)
+- All tasks in current feature's task file marked Complete
+- Full test suite passes
+- No unresolved blocking bugs
+
+## Output
+
+- Passing code on feature branch
+- Updated task file with completion status
+- Decision records for any unplanned decisions
+- Bug log entries for any discovered bugs
+
+## Rules
+
+- TDD — tests exist before implementation
+- One task per commit
+- Do not modify existing tests
+- Do not add functionality beyond spec
+- Update spec before unplanned decisions
+
+## See Also
+
+- Bug logging: `/bug` command

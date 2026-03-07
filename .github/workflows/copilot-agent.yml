@@ -1,0 +1,40 @@
+name: "Copilot Agent — Issue to PR"
+on:
+  issues:
+    types: [assigned]
+
+concurrency:
+  group: copilot-issue-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  implement:
+    if: github.event.assignee.login == 'copilot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # [PROJECT-SPECIFIC] — Add your setup steps here or reference copilot-setup-steps.yml
+      # - uses: actions/setup-node@v4
+      # - run: npm ci
+
+      - name: Read project context
+        run: |
+          echo "Reading AGENTS.md for project conventions..."
+          cat AGENTS.md
+
+      # The Copilot Coding Agent handles the rest:
+      # - Reads the issue description
+      # - Creates a feature branch (copilot/feat-<issue-number>-<slug>)
+      # - Implements the changes following AGENTS.md conventions
+      # - Opens a draft PR linking back to the issue
+      # - Runs tests per workflow/PLAYBOOK.md gates
+
+      # Note: This workflow provides the trigger and environment.
+      # The actual Copilot Coding Agent orchestration is managed by GitHub.
+      # See: https://docs.github.com/en/copilot/using-github-copilot/using-copilot-coding-agent

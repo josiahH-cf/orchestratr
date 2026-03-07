@@ -1,7 +1,7 @@
-# ExecPlan Template
+# Implementation Plan Template
 
-When a task requires more than 3 steps, create an ExecPlan following
-this structure. The plan is a living document — update it as work proceeds.
+When a task requires more than 3 steps, create an implementation plan following
+this structure. The plan is a living document  -  update it as work proceeds.
 Treat the reader as having zero prior context.
 
 ---
@@ -9,6 +9,13 @@ Treat the reader as having zero prior context.
 ## Purpose
 
 <!-- One paragraph: what this accomplishes and why -->
+
+## Linkage
+
+- Feature ID: [issue-id]-[slug]
+- Spec: `/specs/[feature-id]-[slug].md`
+- Tasks: `/tasks/[feature-id]-[slug].md`
+- Milestones cover tasks: [T-1, T-2, ...]
 
 ## Scope
 
