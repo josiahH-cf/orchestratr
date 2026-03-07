@@ -23,7 +23,7 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.22"
 
