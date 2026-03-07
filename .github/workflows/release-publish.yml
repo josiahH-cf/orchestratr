@@ -73,7 +73,7 @@ jobs:
           go build -ldflags "-X main.Version=${{ env.VERSION }}" -o "${{ matrix.binary }}" ./cmd/orchestratr
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: ${{ matrix.binary }}
