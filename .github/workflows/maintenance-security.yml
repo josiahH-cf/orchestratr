@@ -59,7 +59,7 @@ jobs:
 
       - name: Create issue on vulnerability findings
         if: steps.vulncheck.outputs.has_findings == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');

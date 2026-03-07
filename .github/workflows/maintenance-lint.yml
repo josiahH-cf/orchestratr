@@ -46,7 +46,7 @@ jobs:
 
       - name: Create issue on findings
         if: steps.lint.outcome == 'failure' || steps.vet.outcome == 'failure' || steps.fmt.outputs.unformatted == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const labels = ['maintenance', 'automated'];
