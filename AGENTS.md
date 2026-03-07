@@ -4,7 +4,7 @@ Canonical entrypoint for all coding agents. Read this first, then follow links t
 
 ## Overview
 
-`[PROJECT-SPECIFIC]` — Filled during Compass phase (Phase 2).
+Orchestratr is a cross-platform global hotkey launcher. It maps keyboard chords (Ctrl+Space + key) to app launches, runs as a background daemon with a web-based management GUI, and discovers apps via drop-in config files. Written in Go, distributed as a single binary with zero runtime dependencies. Targets Linux, macOS, and Windows.
 
 ## Workflow Phases
 

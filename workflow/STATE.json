@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "projectPhase": "2-compass",
+  "projectPhase": "3-define-features",
   "currentFeatureId": "",
   "currentTaskFile": "",
   "testMode": "pre",
@@ -8,5 +8,5 @@
   "advisoryProfile": "",
   "features": {},
   "activeClaims": [],
-  "updatedAt": ""
+  "updatedAt": "2026-03-07"
 }
