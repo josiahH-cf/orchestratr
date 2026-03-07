@@ -24,21 +24,24 @@
       "Bash(diff *)",
       "Bash(mkdir *)",
       "Bash(cp *)",
-      "Bash(mv *)"
+      "Bash(mv *)",
+      "Bash(go *)",
+      "Bash(make *)",
+      "Bash(gofmt *)"
     ]
   },
   "hooks": {
     "PostToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
-        "command": "if command -v npx >/dev/null 2>&1 && [ -f package.json ]; then npx prettier --write \"$FILEPATH\" 2>/dev/null || true; fi",
+        "command": "if [[ \"$FILEPATH\" == *.go ]]; then gofmt -w \"$FILEPATH\" 2>/dev/null || true; fi",
         "timeout": 15000
       }
     ],
     "Stop": [
       {
         "matcher": "",
-        "command": "echo 'Remember: run your test suite before ending this session. Configure your test command in AGENTS.md Core Commands.'"
+        "command": "echo 'Remember: run make test before ending this session.'"
       }
     ]
   }

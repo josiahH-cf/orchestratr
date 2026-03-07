@@ -14,38 +14,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # [PROJECT-SPECIFIC] — Replace with your project's install command
-      # Example for Node.js:
-      # - uses: actions/setup-node@v4
-      #   with:
-      #     node-version: '20'
-      # - run: npm ci
-
-      # Example for Python:
-      # - uses: actions/setup-python@v5
-      #   with:
-      #     python-version: '3.12'
-      # - run: pip install -r requirements.txt
-
-      - name: Verify setup
-        run: echo "Environment ready for Copilot Coding Agent"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
 
       - name: Install dependencies
+        env:
+          INSTALL_CMD: go mod download
         run: |
           set -euo pipefail
           eval "$INSTALL_CMD"
 
       - name: Build project
+        env:
+          BUILD_CMD: make build
         run: |
           set -euo pipefail
           eval "$BUILD_CMD"
 
       - name: Lint project
+        env:
+          LINT_CMD: make lint
         run: |
           set -euo pipefail
           eval "$LINT_CMD"
 
       - name: Run tests
+        env:
+          TEST_CMD: make test
         run: |
           set -euo pipefail
           eval "$TEST_CMD"
