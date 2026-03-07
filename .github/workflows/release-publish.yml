@@ -14,9 +14,74 @@ permissions:
   contents: write
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            cgo: 1
+            binary: orchestratr
+            asset: orchestratr-linux-amd64
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            cgo: 1
+            binary: orchestratr
+            asset: orchestratr-linux-arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            cgo: 1
+            binary: orchestratr
+            asset: orchestratr-darwin-arm64
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+            cgo: 1
+            binary: orchestratr
+            asset: orchestratr-darwin-amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            cgo: 0
+            binary: orchestratr.exe
+            asset: orchestratr-windows-amd64.exe
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Resolve version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME:-${{ inputs.version }}}"
+          echo "VERSION=$TAG" >> "$GITHUB_ENV"
+
+      - name: Build binary
+        shell: bash
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -ldflags "-X main.Version=${{ env.VERSION }}" -o "${{ matrix.binary }}" ./cmd/orchestratr
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.binary }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,9 +97,7 @@ jobs:
           echo "VERSION=$TAG" >> "$GITHUB_ENV"
 
       - name: Generate changelog
-        id: changelog
         run: |
-          # Get the previous tag
           PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | sed -n '2p')
           if [[ -z "$PREV_TAG" ]]; then
             echo "First release — including all commits"
@@ -42,13 +105,28 @@ jobs:
           else
             CHANGELOG=$(git log "${PREV_TAG}..HEAD" --oneline --no-merges)
           fi
-          # Write to file for the release body
           {
             echo "## What's Changed"
             echo ""
             echo "$CHANGELOG" | sed 's/^/- /'
           } > RELEASE_NOTES.md
           echo "Generated changelog with $(echo "$CHANGELOG" | wc -l) entries"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          for dir in dist/*/; do
+            asset_name=$(basename "$dir")
+            file=$(find "$dir" -type f | head -1)
+            cp "$file" "release-assets/${asset_name}"
+            chmod +x "release-assets/${asset_name}" 2>/dev/null || true
+          done
+          ls -la release-assets/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -58,6 +136,7 @@ jobs:
           body_path: RELEASE_NOTES.md
           draft: false
           prerelease: ${{ contains(env.VERSION, '-') }}
+          files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

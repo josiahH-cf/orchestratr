@@ -1,5 +1,9 @@
 # NOTE: These contents should be appended to the existing file.
 
+# Build artifacts
+orchestratr
+orchestratr.exe
+
 # Agent personal overrides
 CLAUDE.local.md
 

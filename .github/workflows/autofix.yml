@@ -1,7 +1,7 @@
 name: "Auto-Fix — CI Failure Recovery"
 on:
   workflow_run:
-    workflows: ["CI"]  # [PROJECT-SPECIFIC] — Name of your CI workflow
+    workflows: ["CI"]
     types: [completed]
 
 concurrency:
@@ -23,9 +23,9 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
 
-      # [PROJECT-SPECIFIC] — Add your setup steps
-      # - uses: actions/setup-node@v4
-      # - run: npm ci
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
 
       - uses: anthropics/claude-code-action@v1
         with:

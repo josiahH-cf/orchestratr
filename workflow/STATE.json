@@ -1,12 +1,20 @@
 {
   "schemaVersion": 2,
-  "projectPhase": "3-define-features",
+  "projectPhase": "9-operationalize",
   "currentFeatureId": "",
   "currentTaskFile": "",
-  "testMode": "pre",
-  "maintenanceLevel": "",
-  "advisoryProfile": "",
-  "features": {},
+  "testMode": "",
+  "maintenanceLevel": "standard",
+  "automationLevel": "light",
+  "advisoryProfile": "standard",
+  "features": {
+    "e2e-hotkey-launch-pipeline": "shipped",
+    "drop-in-app-discovery": "shipped",
+    "ready-cmd-health-polling": "shipped",
+    "startup-diagnostic": "shipped",
+    "system-tray": "shipped",
+    "windows-platform-layer": "shipped"
+  },
   "activeClaims": [],
   "updatedAt": "2026-03-07"
 }
