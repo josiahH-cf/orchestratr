@@ -296,6 +296,72 @@ func TestRun_StatusNotRunning(t *testing.T) {
 	}
 }
 
+func TestRun_StatusStalePIDCleansArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "orchestratr.pid")
+	portPath := filepath.Join(dir, "port")
+
+	t.Setenv("ORCHESTRATR_LOCK_PATH", lockPath)
+	t.Setenv("ORCHESTRATR_PORT_PATH", portPath)
+
+	if err := os.WriteFile(lockPath, []byte("999999"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(portPath, []byte("9876"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"status"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run(status) error = %v", err)
+	}
+
+	if !strings.Contains(stdout.String(), "stale PID") {
+		t.Errorf("output = %q, want stale PID message", stdout.String())
+	}
+
+	if _, statErr := os.Stat(lockPath); !os.IsNotExist(statErr) {
+		t.Errorf("lock file should be removed, stat error = %v", statErr)
+	}
+	if _, statErr := os.Stat(portPath); !os.IsNotExist(statErr) {
+		t.Errorf("port file should be removed, stat error = %v", statErr)
+	}
+}
+
+func TestRun_StatusInvalidPIDCleansArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "orchestratr.pid")
+	portPath := filepath.Join(dir, "port")
+
+	t.Setenv("ORCHESTRATR_LOCK_PATH", lockPath)
+	t.Setenv("ORCHESTRATR_PORT_PATH", portPath)
+
+	if err := os.WriteFile(lockPath, []byte("not-a-number"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(portPath, []byte("9876"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"status"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run(status) error = %v", err)
+	}
+
+	if !strings.Contains(stdout.String(), "not running") {
+		t.Errorf("output = %q, want not running message", stdout.String())
+	}
+
+	if _, statErr := os.Stat(lockPath); !os.IsNotExist(statErr) {
+		t.Errorf("lock file should be removed, stat error = %v", statErr)
+	}
+	if _, statErr := os.Stat(portPath); !os.IsNotExist(statErr) {
+		t.Errorf("port file should be removed, stat error = %v", statErr)
+	}
+}
+
 func TestRun_StopNotRunning(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("ORCHESTRATR_LOCK_PATH", filepath.Join(dir, "orchestratr.pid"))

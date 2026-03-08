@@ -516,6 +516,7 @@ func runStop(stdout, stderr io.Writer) error {
 func runStatus(stdout, stderr io.Writer) error {
 	pid, err := readPIDFile()
 	if err != nil {
+		cleanupStaleRuntimeArtifacts()
 		fmt.Fprintln(stdout, "orchestratr is not running")
 		return nil
 	}
@@ -528,6 +529,7 @@ func runStatus(stdout, stderr io.Writer) error {
 	}
 
 	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		cleanupStaleRuntimeArtifacts()
 		fmt.Fprintf(stdout, "orchestratr is not running (stale PID %d)\n", pid)
 		return nil
 	}
@@ -539,6 +541,13 @@ func runStatus(stdout, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "orchestratr is running (PID %d)\n", pid)
 	}
 	return nil
+}
+
+// cleanupStaleRuntimeArtifacts removes stale daemon discovery files when the
+// daemon process is not alive.
+func cleanupStaleRuntimeArtifacts() {
+	_ = os.Remove(lockPathFromEnv())
+	daemon.RemovePortFile(portPathFromEnv())
 }
 
 // readPIDFile reads the daemon PID from the lock file.
@@ -557,6 +566,15 @@ func lockPathFromEnv() string {
 		return p
 	}
 	return daemon.DefaultLockPath()
+}
+
+// portPathFromEnv returns the port discovery file path, allowing override via
+// ORCHESTRATR_PORT_PATH for testing.
+func portPathFromEnv() string {
+	if p := os.Getenv("ORCHESTRATR_PORT_PATH"); p != "" {
+		return p
+	}
+	return daemon.DefaultPortFilePath()
 }
 
 // runList loads the config and prints the app registry as a table.
@@ -896,10 +914,7 @@ func runConfigure(stdout, stderr io.Writer) error {
 
 // readPort reads the daemon port from the port discovery file.
 func readPort() (int, error) {
-	portPath := daemon.DefaultPortFilePath()
-	if p := os.Getenv("ORCHESTRATR_PORT_PATH"); p != "" {
-		portPath = p
-	}
+	portPath := portPathFromEnv()
 	data, err := os.ReadFile(portPath)
 	if err != nil {
 		return 0, err
