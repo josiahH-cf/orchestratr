@@ -17,7 +17,7 @@ jobs:
       pull-requests: write
       issues: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # [PROJECT-SPECIFIC] — Add your setup steps here or reference copilot-setup-steps.yml
       # - uses: actions/setup-node@v4
