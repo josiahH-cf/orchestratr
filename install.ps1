@@ -19,10 +19,10 @@ $BinaryName = "orchestratr.exe"
 $DefaultInstallDir = Join-Path $env:LOCALAPPDATA "orchestratr"
 $InstallDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { $DefaultInstallDir }
 
-function Write-Info($msg)  { Write-Host "  → $msg" -ForegroundColor Cyan }
-function Write-Warn($msg)  { Write-Host "  ⚠ $msg" -ForegroundColor Yellow }
-function Write-Err($msg)   { Write-Host "  ✗ $msg" -ForegroundColor Red }
-function Write-Ok($msg)    { Write-Host "  ✓ $msg" -ForegroundColor Green }
+function Write-Info($msg)  { Write-Host "  -> $msg" -ForegroundColor Cyan }
+function Write-Warn($msg)  { Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
+function Write-Err($msg)   { Write-Host "  [ERR] $msg" -ForegroundColor Red }
+function Write-Ok($msg)    { Write-Host "  [OK] $msg" -ForegroundColor Green }
 
 function Test-Prerequisites {
     if ($env:SKIP_BUILD -eq "1") {
@@ -55,9 +55,21 @@ function Install-Binary {
     }
 
     $scriptDir = $PSScriptRoot
-    $goMod = Join-Path $scriptDir "go.mod"
+    $canBuildFromSource = $false
+    if ($scriptDir) {
+        # Building from UNC paths (e.g., \\wsl.localhost\...) is unreliable with Go on Windows.
+        # Fall back to go install in those cases.
+        $isUncPath = $scriptDir.StartsWith("\\\\")
+        if ($isUncPath) {
+            Write-Warn "UNC script path detected ($scriptDir); using go install fallback"
+        }
+        $goMod = Join-Path $scriptDir "go.mod"
+        if ((-not $isUncPath) -and (Test-Path $goMod)) {
+            $canBuildFromSource = $true
+        }
+    }
 
-    if (Test-Path $goMod) {
+    if ($canBuildFromSource) {
         Write-Info "Building from source in $scriptDir"
         $outputPath = Join-Path $InstallDir $BinaryName
         Push-Location $scriptDir
@@ -74,7 +86,7 @@ function Install-Binary {
 
     $binPath = Join-Path $InstallDir $BinaryName
     if (-not (Test-Path $binPath)) {
-        Write-Err "Build failed — $binPath not found"
+        Write-Err "Build failed - $binPath not found"
         exit 1
     }
 
@@ -84,7 +96,7 @@ function Install-Binary {
     $pathDirs = $env:PATH -split ';'
     if ($InstallDir -notin $pathDirs) {
         Write-Warn "$InstallDir is not in your PATH"
-        Write-Warn "Add it: `$env:PATH += `";$InstallDir`""
+        Write-Warn "Add it with: `$env:PATH += ';$InstallDir'"
     }
 }
 

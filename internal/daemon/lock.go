@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 )
 
 // Lock represents a PID-based single-instance lock file.
@@ -58,13 +57,7 @@ func (l *Lock) Release() error {
 	return os.Remove(l.path)
 }
 
-// processAlive checks whether a process with the given PID is running.
-func processAlive(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// Signal 0 tests whether the process exists without sending a signal.
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil
+// ProcessAlive checks whether a process with the given PID is running.
+func ProcessAlive(pid int) bool {
+	return processAlive(pid)
 }
