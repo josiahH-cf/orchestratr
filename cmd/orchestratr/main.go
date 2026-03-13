@@ -527,8 +527,9 @@ func runStatus(stdout, stderr io.Writer) error {
 		fmt.Fprintln(stdout, "orchestratr is not running")
 		return nil
 	}
+	_ = proc // process existence check delegated to daemon package
 
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
+	if !daemon.ProcessAlive(pid) {
 		cleanupStaleRuntimeArtifacts()
 		fmt.Fprintf(stdout, "orchestratr is not running (stale PID %d)\n", pid)
 		return nil

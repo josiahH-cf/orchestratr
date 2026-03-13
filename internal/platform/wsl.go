@@ -2,6 +2,7 @@ package platform
 
 import (
 	"os"
+	"runtime"
 	"strings"
 )
 
@@ -10,6 +11,9 @@ const procVersionPath = "/proc/version"
 // IsWSL2 reports whether the current environment is running inside
 // WSL2 by checking /proc/version for Microsoft/WSL2 markers.
 func IsWSL2() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
 	return isWSL2WithPath(procVersionPath)
 }
 

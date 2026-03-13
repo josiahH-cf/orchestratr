@@ -3,6 +3,7 @@ package platform
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -71,5 +72,16 @@ func TestWSL2Warning(t *testing.T) {
 	}
 	if !strings.Contains(msg, "Windows") {
 		t.Errorf("WSL2Warning() = %q, expected to mention Windows", msg)
+	}
+}
+
+func TestIsWSL2_NonLinuxRuntimeNeverWSL(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("test validates non-linux runtime behavior")
+	}
+
+	// On non-Linux builds, IsWSL2 should be false regardless of filesystem state.
+	if IsWSL2() {
+		t.Error("IsWSL2() = true on non-linux runtime, want false")
 	}
 }
