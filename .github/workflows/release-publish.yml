@@ -129,7 +129,7 @@ jobs:
           ls -la release-assets/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.VERSION }}
           name: "Release ${{ env.VERSION }}"
